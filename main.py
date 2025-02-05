@@ -21,7 +21,7 @@ def collect_target_data(args, agent_target, target_env):
     train_set = ReplayBuffer_traj()
 
     expert_ratio = args.expert_ratio
-    random_ratio = args.random_ratio
+    random_ratio = np.round(1.0 - expert_ratio, 2)
 
     env_target = gym.make(target_env)
     max_episode_steps = env_target.spec.max_episode_steps
@@ -110,13 +110,12 @@ def seed_everything(seed):
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("seed", type=int, nargs='?', default=2)
-    parser.add_argument("targetData_ep", type=int, nargs='?', default=10000) # 10000
     parser.add_argument("MPC_pre_ep", type=int, nargs='?', default=10000)
-    parser.add_argument("expert_ratio", type=float, nargs='?', default=0.8)
-    parser.add_argument("random_ratio", type=float, nargs='?', default=0.2)
     parser.add_argument("decoder_batch", type=int, nargs='?', default=32)
-    parser.add_argument("decoder_ep", type=int, nargs='?', default=500)
+    parser.add_argument("--seed", type=int, nargs='?', default=2)
+    parser.add_argument("--targetData_ep", type=int, nargs='?', default=10000) # 1000/10000
+    parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.8) # random_ratio=1-expert_ratio
+    parser.add_argument("--decoder_ep", type=int, nargs='?', default=500) # 500/200
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
     parser.add_argument("--env", type=str, nargs='?', default="cheetah") # cheetah reacher
     
@@ -141,19 +140,21 @@ if __name__ == '__main__':
 
     hidden_dim = 512
     action_range = 10.0 if args.env=="reacher" else 1.0
+    location = f'./models/{args.env}/seed_{str(args.seed)}'
+    mpc_location = f'{location}/expert_ratio_{args.expert_ratio}/'
 
     ##### 1 Loading source domain policy #####
     print("##### Loading source domain policy #####")
     #agent = SAC.load(f'./experiments/{args.env}_source_18/models/final_model.zip', device=args.device) # SB3
     agent = PolicyNetwork(source_s_dim, source_a_dim, hidden_dim, action_range, args.device).to(args.device)
-    agent.load_state_dict(torch.load(f'./v2_models/{args.env}/{args.env}_source.pth'))
+    agent.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_source.pth', map_location=args.device ))
 
 
     ##### 2 Loading target domain expert policy #####
     print("##### Loading target domain expert policy #####")
     #agent_target = SAC.load(f'./experiments/{args.env}_target/models/final_model.zip', device=args.device) # SB3
     agent_target = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, args.device).to(args.device)
-    agent_target.load_state_dict(torch.load(f'./v2_models/{args.env}/{args.env}_target.pth'))
+    agent_target.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_target.pth', map_location=args.device ))
 
 
     ##### 3 Collecting target domain data #####
@@ -163,18 +164,18 @@ if __name__ == '__main__':
 
     ##### 4 Train or Loading MPC policy and Dynamic Model #####
     mpc_dm = MPC_DM(target_s_dim, target_a_dim, args.device)
-    if not os.path.exists(f'./v2_models/{args.env}'): os.makedirs(f'./v2_models/{args.env}')
-    if os.path.exists(f'./v2_models/{args.env}/{str(args.seed)}_MPCModel.pth'):
+    if not os.path.exists(mpc_location): os.makedirs(mpc_location)
+    if os.path.exists(f'{mpc_location}/{str(args.seed)}_MPCModel.pth'):
         print("##### Loading MPC policy and Dynamic Model #####")
-        mpc_dm.mpc_policy_net.load_state_dict(torch.load( f'./v2_models/{args.env}/{str(args.seed)}_MPCModel.pth', map_location=args.device ))
-        mpc_dm.dynamic_model.load_state_dict(torch.load( f'./v2_models/{args.env}/{str(args.seed)}_DynamicModel.pth', map_location=args.device ))
+        mpc_dm.mpc_policy_net.load_state_dict(torch.load( f'{mpc_location}/{str(args.seed)}_MPCModel.pth', map_location=args.device ))
+        mpc_dm.dynamic_model.load_state_dict(torch.load( f'{mpc_location}/{str(args.seed)}_DynamicModel.pth', map_location=args.device ))
     else:
         print("##### Training MPC policy and Dynamic Model #####")
         batch_size = 128
         for i in range(args.MPC_pre_ep):
             mpc_dm.update(batch_size, buffer)
-            torch.save(mpc_dm.mpc_policy_net.state_dict(), f'./v2_models/{args.env}/{str(args.seed)}_MPCModel.pth')
-            torch.save(mpc_dm.dynamic_model.state_dict(), f'./v2_models/{args.env}/{str(args.seed)}_DynamicModel.pth')
+            torch.save(mpc_dm.mpc_policy_net.state_dict(), f'{mpc_location}/{str(args.seed)}_MPCModel.pth')
+            torch.save(mpc_dm.dynamic_model.state_dict(), f'{mpc_location}/{str(args.seed)}_DynamicModel.pth')
 
 
     ##### 5 Training state decoder #####

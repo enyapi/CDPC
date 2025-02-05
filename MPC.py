@@ -290,7 +290,7 @@ class MPC(object):
                     #action, _ = self.agent.predict(state.cpu().detach().numpy(), deterministic=True) # SB3-SAC default
                     #action = self.agent.policy.actor(state.unsqueeze(0), deterministic=True) # SB3-SAC GPU
 
-                    #_, r, _, _, _ = env.step(np.squeeze(action))
+                    #next_state, r, _, _, _ = env.step(np.squeeze(action))
                     if self.env == "reacher":
                         r = reacher_source_R(state, action).cpu().detach().numpy()
                     elif self.env == "cheetah":
