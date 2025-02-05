@@ -312,8 +312,8 @@ if __name__ == '__main__':
     wandb.init(project="cdpc", name = 'cheetah v2: source policy')
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("seed", type=int, nargs='?', default=2)
     parser.add_argument("source_ep", type=int, nargs='?', default=10000)
+    parser.add_argument("--seed", type=int, nargs='?', default=2)
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
     parser.add_argument("--domain", type=str, nargs='?', default="source")
     parser.add_argument("--env", type=str, nargs='?', default="cheetah")
@@ -361,11 +361,10 @@ if __name__ == '__main__':
     max_episode_steps = env.spec.max_episode_steps
 
     agent = SAC(replay_buffer, hidden_dim=hidden_dim, action_range=action_range, args=args, observation_space=state_dim, action_space=action_dim, device=device)
-    
-    if not os.path.exists(f'./v2_models/{args.env}'): os.makedirs(f'./v2_models/{args.env}')
-    if os.path.exists(f'./v2_models/{args.env}/{args.env}_{args.domain}.pth'):
-        agent.policy_net.load_state_dict(torch.load(f'./v2_models/{args.env}/{args.env}_{args.domain}.pth'))
-    else:
+    location = f'./models/{args.env}/seed_{str(args.seed)}'
+
+    if not os.path.exists(location): os.makedirs(location)
+    if not os.path.exists(f'{location}/{str(args.seed)}_{args.env}_{args.domain}.pth'):
         test_score = agent.evalute()
         wandb.log({"episode": 0, "score/test": test_score})
         Return = [] 
@@ -397,5 +396,5 @@ if __name__ == '__main__':
             wandb.log({"episode": episode, "score/train": score})
             Return.append(score)
             if episode % 100 == 0:
-                torch.save(agent.policy_net.state_dict(), f'./v2_models/{args.env}/{args.env}_{args.domain}.pth')
+                torch.save(agent.policy_net.state_dict(), f'{location}/{str(args.seed)}_{args.env}_{args.domain}.pth')
         env.close()
