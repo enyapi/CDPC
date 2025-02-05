@@ -309,8 +309,6 @@ def seed_everything(seed):
 
 
 if __name__ == '__main__':
-    wandb.init(project="cdpc", name = 'cheetah v2: source policy')
-
     parser = argparse.ArgumentParser()
     parser.add_argument("source_ep", type=int, nargs='?', default=10000)
     parser.add_argument("--seed", type=int, nargs='?', default=2)
@@ -321,6 +319,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     seed_everything(args.seed)
     device = args.device
+    
+    wandb.init(project="cdpc", name = f'{args.env} {str(args.seed)}: {args.domain} policy')
 
     ##### Loading source domain policy #####
     print("##### training source domain policy #####")
