@@ -63,7 +63,7 @@ def CDPC(mpc, train_set):
     Return_val = []
     # val state decoder
     total_reward = mpc.evaluate() 
-    wandb.log({"validation_reward": total_reward, })
+    wandb.log({"cdpc episode": 0, "valid/reward": total_reward, })
 
     Return_val.append(total_reward)
     print(f'episode: {0}, validation reward: {total_reward}')
@@ -73,7 +73,7 @@ def CDPC(mpc, train_set):
         loss_tran_list, loss_pref_list, loss_rec_list = [], [], []
         for _ in range(1):
             mpc.decoder_net.train()
-            loss_tran, loss_pref, loss_rec = mpc.learn(train_set)
+            loss_tran, loss_pref, loss_rec, pref_acc = mpc.learn(train_set)
             loss_tran_list.append(loss_tran)
             loss_pref_list.append(loss_pref)
             loss_rec_list.append(loss_rec)
@@ -86,11 +86,13 @@ def CDPC(mpc, train_set):
             print(f'episode: {j}, avg. validation reward: {total_reward}')
 
         Return_val.append(total_reward)
-        wandb.log({"validation_reward": total_reward, 
-                  "tran loss": np.mean(loss_tran_list),
-                  "pref loss": np.mean(loss_pref_list),
-                  "rec loss": np.mean(loss_rec_list),
-                  })
+        wandb.log({"cdpc episode": j,
+                "valid/reward": total_reward, 
+                "train/tran loss": np.mean(loss_tran_list),
+                "train/pref loss": np.mean(loss_pref_list),
+                "train/rec loss": np.mean(loss_rec_list),
+                "train/pref acc": pref_acc,
+                })
         # if not os.path.exists('./data/'): os.makedirs('./data/')
         # filename = './data/'+str(args.seed)+'_0.8_0.2.npz'
         # np.savez(filename, reward_val = Return_val)
@@ -173,9 +175,10 @@ if __name__ == '__main__':
         print("##### Training MPC policy and Dynamic Model #####")
         batch_size = 128
         for i in range(args.MPC_pre_ep):
-            mpc_dm.update(batch_size, buffer)
-            torch.save(mpc_dm.mpc_policy_net.state_dict(), f'{mpc_location}/{str(args.seed)}_MPCModel.pth')
-            torch.save(mpc_dm.dynamic_model.state_dict(), f'{mpc_location}/{str(args.seed)}_DynamicModel.pth')
+            loss_mpc, loss_dm = mpc_dm.update(batch_size, buffer)
+            wandb.log({"mpc_dm episode": i, "train/loss_mpc": loss_mpc, "train/loss_dm": loss_dm,})
+        torch.save(mpc_dm.mpc_policy_net.state_dict(), f'{mpc_location}/{str(args.seed)}_MPCModel.pth')
+        torch.save(mpc_dm.dynamic_model.state_dict(), f'{mpc_location}/{str(args.seed)}_DynamicModel.pth')
 
 
     ##### 5 Training state decoder #####

@@ -6,7 +6,6 @@ import numpy as np
 import torch.nn.functional as F
 import torch.optim as optim
 from itertools import combinations
-import wandb
 import numpy as np
 
 def reacher_source_R(state, action):
@@ -183,7 +182,6 @@ class MPC(object):
         sub_first_rewards = result_tensor-result_tensor[:,0][:,None]
         loss_pref = torch.sum(sub_first_rewards.exp(), -1).log().mean()
         pref_acc = (sub_first_rewards[:,1] < 0).sum().item() / self.batch_size
-        wandb.log({"train/pref_acc": pref_acc,})
         
         dec_loss = loss_tran + loss_rec + loss_pref # no preference loss
         enc_loss = loss_rec
@@ -195,7 +193,7 @@ class MPC(object):
         self.dec_optimizer.step()
         self.enc_optimizer.step()
 
-        return loss_tran.item(), loss_pref.item(), loss_rec.item()
+        return loss_tran.item(), loss_pref.item(), loss_rec.item(), pref_acc
     
 
     def train_loss(self, state, next_state):

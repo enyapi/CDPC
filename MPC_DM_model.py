@@ -4,7 +4,6 @@ import torch.nn as nn
 import collections
 import torch.nn.functional as F
 import torch.optim as optim
-import wandb
 
 
 class ReplayBuffer():
@@ -107,7 +106,6 @@ class MPC_DM:
         state, action, reward, next_state, done = buffer.sample(batch_size)
         pred_action = self.mpc_policy_net(state)
         loss_mpc = F.mse_loss(pred_action, action)
-        wandb.log({"train/loss_mpc": loss_mpc, })
         self.mpc_policy_optimizer.zero_grad()
         loss_mpc.backward()
         self.mpc_policy_optimizer.step()
@@ -117,7 +115,8 @@ class MPC_DM:
         pred_next_state = self.dynamic_model(torch.cat([state, action], dim=1))
         # pred_next_state = self.dynamic_model(state, action)
         loss_dm = F.mse_loss(pred_next_state, next_state)
-        wandb.log({"train/loss_dm": loss_dm, })
         self.dynamic_model_optimizer.zero_grad()
         loss_dm.backward()
         self.dynamic_model_optimizer.step()
+        
+        return loss_mpc, loss_dm
