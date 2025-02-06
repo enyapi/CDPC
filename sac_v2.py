@@ -282,7 +282,7 @@ class SAC():
         for _ in range(eval_episode):
             score = 0
             state = self.test_env.reset(seed = self.args.seed)[0]
-            for _ in range(env.spec.max_episode_steps):
+            for _ in range(self.test_env.spec.max_episode_steps):
                 action = self.policy_net.get_action(state, deterministic = True)
                 next_state, reward, terminated, truncated, _ = self.test_env.step(action)
                 done = truncated or terminated

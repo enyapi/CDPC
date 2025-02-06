@@ -10,6 +10,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sac_v2 import ReplayBuffer, PolicyNetwork, SAC
 
+
 def collect_target_data(args, agent_target, env_target, buffer):
     expert_ratio = args.expert_ratio
     random_ratio = np.round(1.0 - expert_ratio, 2)
@@ -65,7 +66,7 @@ if __name__ == '__main__':
     seed_everything(args.seed)
     device = args.device
     
-    wandb.init(project="cdpc", name = f'baseline: SAC-Off-TR {str(args.seed)}_{args.env}')
+    wandb.init(project="cdpc", name = f'baseline: SAC-Off-TR {str(args.seed)}_{args.env} no auto entropy')
     location = f'./baselines/sac_off_tr/{args.env}/seed_{str(args.seed)}'
 
     ##### Loading source domain policy #####
@@ -77,13 +78,13 @@ if __name__ == '__main__':
     
 
     # Params
-    batch_size = 32 #300
+    batch_size = 32*50 #300
     replay_buffer_size = 1e6
     replay_buffer = ReplayBuffer(replay_buffer_size)
     hidden_dim = 512
     action_range = 10.0 if args.env=="reacher" else 1.0
     DETERMINISTIC=False
-    AUTO_ENTROPY=True
+    AUTO_ENTROPY=False #True
     action_dim = env.action_space.shape[0]
     state_dim = env.observation_space.shape[0]
 
@@ -93,6 +94,8 @@ if __name__ == '__main__':
     wandb.config.update() 
 
     trained_agent = PolicyNetwork(state_dim, action_dim, hidden_dim, action_range, args.device).to(args.device)
+    model_path = f'models/{args.env}/seed_{str(args.seed)}/{str(args.seed)}_{args.env}_target.pth'
+    trained_agent.load_state_dict(torch.load( model_path, map_location=args.device ))
     agent = SAC(replay_buffer, hidden_dim=hidden_dim, action_range=action_range, args=args, observation_space=state_dim, action_space=action_dim, device=device)
 
     if not os.path.exists(location): os.makedirs(location)
@@ -108,7 +111,7 @@ if __name__ == '__main__':
 
             eval_freq = 1
             if episode % eval_freq == 0: # plot and model saving interval
-                test_score = agent.evalaute()
+                test_score = agent.evaluate()
                 wandb.log({"episode": episode, "test/score": test_score})
 
         torch.save(agent.policy_net.state_dict(), f'{location}/{str(args.seed)}_{args.env}_sac_off_tr.pth')
