@@ -12,7 +12,7 @@ from MPC_DM_model import ReplayBuffer, MPC_DM
 from MPC import ReplayBuffer_traj, MPC
 
 warnings.filterwarnings('ignore')
-wandb.init(project="cdpc", name = 'reacher v2 cdpc: mpc reacher_source_R')
+wandb.init(project="cdpc", name = 'cdpc 11_reacher 0.2_expert')
 
 
 def collect_target_data(args, agent_target, target_env):
