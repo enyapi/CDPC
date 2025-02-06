@@ -8,7 +8,7 @@ import os
 import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from sac_v2 import ReplayBuffer, PolicyNetwork
+from sac_v2 import ReplayBuffer, PolicyNetwork, SAC
 
 def collect_target_data(args, agent_target, env_target, buffer):
     expert_ratio = args.expert_ratio
