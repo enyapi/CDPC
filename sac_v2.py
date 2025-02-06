@@ -274,7 +274,7 @@ class SAC():
             )
         return predicted_new_q_value.mean()
 
-    def evalute(self):
+    def evaluate(self):
         print("==============================================")
         print("Evaluating...")
         all_rewards = []
@@ -355,7 +355,7 @@ if __name__ == '__main__':
 
     if not os.path.exists(location): os.makedirs(location)
     if not os.path.exists(f'{location}/{str(args.seed)}_{args.env}_{args.domain}.pth'):
-        test_score = agent.evalute()
+        test_score = agent.evaluate()
         wandb.log({"episode": 0, "test/score": test_score})
         for episode in range(1, args.ep+1):
             score = 0
@@ -383,7 +383,7 @@ if __name__ == '__main__':
             
             ## test
             if episode % 20 == 0: 
-                test_score = agent.evalute()
+                test_score = agent.evaluate()
                 wandb.log({"episode": episode, "test/score": test_score})
 
             ## save model

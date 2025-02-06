@@ -92,22 +92,23 @@ if __name__ == '__main__':
     }
     wandb.config.update() 
 
-    agent = PolicyNetwork(state_dim, action_dim, hidden_dim, action_range, args.device).to(args.device)
+    trained_agent = PolicyNetwork(state_dim, action_dim, hidden_dim, action_range, args.device).to(args.device)
+    agent = SAC(replay_buffer, hidden_dim=hidden_dim, action_range=action_range, args=args, observation_space=state_dim, action_space=action_dim, device=device)
 
     if not os.path.exists(location): os.makedirs(location)
     if not os.path.exists(f'{location}/{str(args.seed)}_{args.env}_sac_off_tr.pth'):
         ## collect offline data
-        collect_target_data(args, agent, env, replay_buffer)
+        collect_target_data(args, trained_agent, env, replay_buffer)
 
         ## train sac_off_tr
-        test_score = agent.evalute()
+        test_score = agent.evaluate()
         wandb.log({"episode": 0, "test/score": test_score})
         for episode in range(1, args.ep+1):
             _ = agent.update(batch_size, reward_scale=10., auto_entropy=AUTO_ENTROPY, target_entropy=-1.*action_dim)
 
             eval_freq = 1
             if episode % eval_freq == 0: # plot and model saving interval
-                test_score = agent.evalute()
+                test_score = agent.evalaute()
                 wandb.log({"episode": episode, "test/score": test_score})
 
         torch.save(agent.policy_net.state_dict(), f'{location}/{str(args.seed)}_{args.env}_sac_off_tr.pth')
