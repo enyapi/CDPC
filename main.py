@@ -12,7 +12,6 @@ from MPC_DM_model import ReplayBuffer, MPC_DM
 from MPC import ReplayBuffer_traj, MPC
 
 warnings.filterwarnings('ignore')
-wandb.init(project="cdpc", name = 'cdpc 11_reacher 0.2_expert')
 
 
 def collect_target_data(args, agent_target, target_env):
@@ -124,6 +123,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
     seed_everything(args.seed)
 
+    wandb.init(project="cdpc", name = f'cdpc {str(args.seed)}_{args.env} {str(args.expert_ratio)}_expert')
+    location = f'./models/{args.env}/seed_{str(args.seed)}/'
+    mpc_location = f'{location}/expert_ratio_{args.expert_ratio}/'
+
     if args.env == "reacher":
         source_env = "Reacher-v4"
         target_env = "Reacher-3joints"
@@ -142,8 +145,6 @@ if __name__ == '__main__':
 
     hidden_dim = 512
     action_range = 10.0 if args.env=="reacher" else 1.0
-    location = f'./models/{args.env}/seed_{str(args.seed)}'
-    mpc_location = f'{location}/expert_ratio_{args.expert_ratio}/'
 
     ##### 1 Loading source domain policy #####
     print("##### Loading source domain policy #####")

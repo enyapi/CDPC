@@ -279,15 +279,17 @@ class SAC():
         print("Evaluating...")
         all_rewards = []
         eval_episode = 5
-        for episode in range(eval_episode):
+        for _ in range(eval_episode):
             score = 0
             state = self.test_env.reset(seed = self.args.seed)[0]
-            for time_steps in range(env.spec.max_episode_steps):
+            for _ in range(env.spec.max_episode_steps):
                 action = self.policy_net.get_action(state, deterministic = True)
-                next_state, reward, done, _, info = self.test_env.step(action)
-
-                state = next_state
+                next_state, reward, terminated, truncated, _ = self.test_env.step(action)
+                done = truncated or terminated
+                
                 score += reward
+                if done: break
+                state = next_state
 
             all_rewards.append(score)
         avg = sum(all_rewards) / eval_episode
@@ -310,7 +312,7 @@ def seed_everything(seed):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("source_ep", type=int, nargs='?', default=10000)
+    parser.add_argument("ep", type=int, nargs='?', default=10000)
     parser.add_argument("--seed", type=int, nargs='?', default=2)
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
     parser.add_argument("--domain", type=str, nargs='?', default="source")
@@ -330,21 +332,9 @@ if __name__ == '__main__':
         env = gym.make("HalfCheetah-v4", exclude_current_positions_from_observation=False) if args.domain == "source" else gym.make("HalfCheetah-3legs")
 
     # Params
-    tau = 1e-2
-    gamma = 0.99
-    q_lr = 3e-4
-    policy_lr = 3e-4
-    alpha_lr = 3e-4
-    buffer_maxlen = 1000000
     batch_size = 300
     
     wandb.config = {
-        "source/tau": tau,
-        "source/gamma": gamma,
-        "source/q_lr": q_lr,
-        "source/policy_lr": policy_lr,
-        "source/alpha_lr": alpha_lr,
-        "source/buffer_maxlen": buffer_maxlen,
         "batch_size": batch_size
     }
     wandb.config.update() 
@@ -366,9 +356,8 @@ if __name__ == '__main__':
     if not os.path.exists(location): os.makedirs(location)
     if not os.path.exists(f'{location}/{str(args.seed)}_{args.env}_{args.domain}.pth'):
         test_score = agent.evalute()
-        wandb.log({"episode": 0, "score/test": test_score})
-        Return = [] 
-        for episode in range(args.source_ep):
+        wandb.log({"episode": 0, "test/score": test_score})
+        for episode in range(1, args.ep+1):
             score = 0
             state = env.reset(seed = args.seed)[0]
             for time_steps in range(max_episode_steps):
@@ -376,7 +365,8 @@ if __name__ == '__main__':
                     action = np.random.uniform(low=-1, high=1, size=(env.action_space.shape[0],))
                 else:
                     action = agent.policy_net.get_action(state, deterministic = DETERMINISTIC)
-                next_state, reward, done, _, info = env.step(action)
+                next_state, reward, terminated, truncated, _ = env.step(action)
+                done = truncated or terminated
 
                 replay_buffer.push(state, action, reward, next_state, done)
 
@@ -388,13 +378,15 @@ if __name__ == '__main__':
 
                 if done: break
             
-            if episode % 20 == 0 and episode>0: # plot and model saving interval
-                test_score = agent.evalute()
-                wandb.log({"episode": episode, "score/test": test_score})
-                
             print("episode:{}, Return:{}, buffer_capacity:{}".format(episode, score, len(replay_buffer)))
-            wandb.log({"episode": episode, "score/train": score})
-            Return.append(score)
+            wandb.log({"episode": episode, "train/score": score})
+            
+            ## test
+            if episode % 20 == 0: 
+                test_score = agent.evalute()
+                wandb.log({"episode": episode, "test/score": test_score})
+
+            ## save model
             if episode % 100 == 0:
                 torch.save(agent.policy_net.state_dict(), f'{location}/{str(args.seed)}_{args.env}_{args.domain}.pth')
         env.close()
