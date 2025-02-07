@@ -14,24 +14,20 @@ from MPC import ReplayBuffer_traj, MPC
 warnings.filterwarnings('ignore')
 
 
-def collect_target_data(args, agent_target, target_env):
+def collect_target_data(agent_target, target_env, n_traj, expert_ratio, device):
     buffer_maxlen = 1000000
-    buffer = ReplayBuffer(buffer_maxlen, args.device)
+    buffer = ReplayBuffer(buffer_maxlen, device)
     train_set = ReplayBuffer_traj()
 
-    expert_ratio = args.expert_ratio
-    random_ratio = np.round(1.0 - expert_ratio, 2)
-
     env_target = gym.make(target_env)
-    max_episode_steps = env_target.spec.max_episode_steps
-    max_episode = args.targetData_ep 
-    for episode in range(int(max_episode)):
+    max_episode_steps = env_target.spec.max_episode_steps 
+    for episode in range(int(n_traj)):
         score = 0
         state, _ = env_target.reset()
         state_list = []
         next_state_list = []
         for _ in range(max_episode_steps):
-            if episode < int(max_episode*expert_ratio):
+            if episode < int(n_traj*expert_ratio):
                 #action, _ = agent_target.predict(state, deterministic=True) # SB3
                 action = agent_target.get_action(state, deterministic=True)
             else:
@@ -53,8 +49,8 @@ def collect_target_data(args, agent_target, target_env):
         print("episode:{}, Return:{}, buffer_capacity:{}".format(episode, score, buffer.buffer_len()))
     env_target.close()
     
-    print("Amount of expert data : ", int(max_episode*expert_ratio))
-    print("Amount of random data : ", int(max_episode*random_ratio))
+    print(f"Collected {buffer.buffer_len()} trajectories.")
+    print(f"Collected {buffer.buffer_len()*max_episode_steps} transitions.")
     return train_set, buffer
 
 
@@ -114,7 +110,7 @@ if __name__ == '__main__':
     parser.add_argument("MPC_pre_ep", type=int, nargs='?', default=10000)
     parser.add_argument("decoder_batch", type=int, nargs='?', default=32)
     parser.add_argument("--seed", type=int, nargs='?', default=2)
-    parser.add_argument("--targetData_ep", type=int, nargs='?', default=10000) # 1000/10000
+    parser.add_argument("--n_traj", type=int, nargs='?', default=10000) # 1000/10000
     parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.8) # random_ratio=1-expert_ratio
     parser.add_argument("--decoder_ep", type=int, nargs='?', default=500) # 500/200
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
@@ -162,7 +158,7 @@ if __name__ == '__main__':
 
     ##### 3 Collecting target domain data #####
     print("##### Collecting target domain data #####")
-    train_set, buffer = collect_target_data(args, agent_target, target_env)
+    train_set, buffer = collect_target_data(agent_target, target_env, args.n_traj, args.expert_ratio, args.device)
 
 
     ##### 4 Train or Loading MPC policy and Dynamic Model #####

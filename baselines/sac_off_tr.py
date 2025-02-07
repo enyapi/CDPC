@@ -11,17 +11,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sac_v2 import ReplayBuffer, PolicyNetwork, SAC
 
 
-def collect_target_data(args, agent_target, env_target, buffer):
-    expert_ratio = args.expert_ratio
-    random_ratio = np.round(1.0 - expert_ratio, 2)
-
+def collect_target_data(agent_target, env_target, n_traj, expert_ratio, buffer):
     max_episode_steps = env_target.spec.max_episode_steps
-    max_episode = args.targetData_ep 
-    for episode in range(int(max_episode)):
+    for episode in range(int(n_traj)):
         score = 0
         state, _ = env_target.reset()
         for _ in range(max_episode_steps):
-            if episode < int(max_episode*expert_ratio):
+            if episode < int(n_traj*expert_ratio):
                 action = agent_target.get_action(state, deterministic=True)
             else:
                 action = np.random.uniform(low=-1, high=1, size=(env_target.action_space.shape[0],))
@@ -36,9 +32,9 @@ def collect_target_data(args, agent_target, env_target, buffer):
 
         print("episode:{}, Return:{}, buffer_capacity:{}".format(episode, score, len(buffer)))
     env_target.close()
-    
-    print("Amount of expert data : ", int(max_episode*expert_ratio))
-    print("Amount of random data : ", int(max_episode*random_ratio))
+
+    print(f"Collected {len(buffer)} trajectories.")
+    print(f"Collected {len(buffer)*max_episode_steps} transitions.")
 
 
 def seed_everything(seed):
@@ -56,7 +52,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("domain", type=str, nargs='?', default="target")
     parser.add_argument("--seed", type=int, nargs='?', default=2)
-    parser.add_argument("--targetData_ep", type=int, nargs='?', default=10000) # 1000/10000
+    parser.add_argument("--n_traj", type=int, nargs='?', default=10000) # 1000/10000
     parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.8) # random_ratio=1-expert_ratio
     parser.add_argument("--ep", type=int, nargs='?', default=500) # the same as cdpc
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
@@ -69,8 +65,7 @@ if __name__ == '__main__':
     wandb.init(project="cdpc", name = f'baseline: SAC-Off-TR {str(args.seed)}_{args.env} no auto entropy')
     location = f'./baselines/sac_off_tr/{args.env}/seed_{str(args.seed)}'
 
-    ##### Loading source domain policy #####
-    print("##### training source domain policy #####")
+    # Env
     if args.env == "reacher":
         env = gym.make("Reacher-3joints")
     elif args.env == "cheetah":
@@ -78,13 +73,12 @@ if __name__ == '__main__':
     
 
     # Params
-    batch_size = 32*50 #300
+    batch_size = 32*env.spec.max_episode_steps
     replay_buffer_size = 1e6
     replay_buffer = ReplayBuffer(replay_buffer_size)
     hidden_dim = 512
     action_range = 10.0 if args.env=="reacher" else 1.0
-    DETERMINISTIC=False
-    AUTO_ENTROPY=False #True
+    AUTO_ENTROPY=True
     action_dim = env.action_space.shape[0]
     state_dim = env.observation_space.shape[0]
 
@@ -93,6 +87,7 @@ if __name__ == '__main__':
     }
     wandb.config.update() 
 
+    # load expert policy
     trained_agent = PolicyNetwork(state_dim, action_dim, hidden_dim, action_range, args.device).to(args.device)
     model_path = f'models/{args.env}/seed_{str(args.seed)}/{str(args.seed)}_{args.env}_target.pth'
     trained_agent.load_state_dict(torch.load( model_path, map_location=args.device ))
@@ -101,7 +96,7 @@ if __name__ == '__main__':
     if not os.path.exists(location): os.makedirs(location)
     if not os.path.exists(f'{location}/{str(args.seed)}_{args.env}_sac_off_tr.pth'):
         ## collect offline data
-        collect_target_data(args, trained_agent, env, replay_buffer)
+        collect_target_data(trained_agent, env, args.n_traj, args.expert_ratio, replay_buffer)
 
         ## train sac_off_tr
         test_score = agent.evaluate()
