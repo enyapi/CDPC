@@ -54,7 +54,7 @@ def collect_target_data(agent_target, target_env, n_traj, expert_ratio, device):
     return train_set, buffer
 
 
-def CDPC(mpc, train_set):
+def CDPC(mpc, train_set, mpc_location):
     Return_val = []
     # val state decoder
     total_reward = mpc.evaluate() 
@@ -88,6 +88,7 @@ def CDPC(mpc, train_set):
                 "train/rec loss": np.mean(loss_rec_list),
                 "train/pref acc": pref_acc,
                 })
+        torch.save(mpc.decoder_net.state_dict(), f'{mpc_location}/{str(mpc.seed)}_decoder.pth')
         # if not os.path.exists('./data/'): os.makedirs('./data/')
         # filename = './data/'+str(args.seed)+'_0.8_0.2.npz'
         # np.savez(filename, reward_val = Return_val)
@@ -195,4 +196,4 @@ if __name__ == '__main__':
         "seed": args.seed,
         "env": args.env,
     }
-    CDPC(MPC(**params), train_set)
+    CDPC(MPC(**params), train_set, mpc_location)
