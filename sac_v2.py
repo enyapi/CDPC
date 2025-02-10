@@ -322,6 +322,7 @@ if __name__ == '__main__':
     seed_everything(args.seed)
     device = args.device
     
+    os.environ["WANDB_DIR"] = "/media/HDD1"
     wandb.init(project="cdpc", name = f'{args.env} {str(args.seed)}: {args.domain} policy')
 
     ##### Loading source domain policy #####
