@@ -343,7 +343,10 @@ class MPC(object):
                 #actions = self.agent.policy.actor(states.unsqueeze(0), deterministic=True) # SB3-SAC GPU
 
                 if self.env == "reacher":
-                    r = reacher_source_R(states, actions).cpu().detach().numpy()
+                    r = np.array([
+                        reacher_source_R(states[i], actions[i]).cpu().detach().numpy()
+                        for i in range(self.N)
+                    ])
                 elif self.env == "cheetah":
                     obs, r, _, _ = vec_env.step(np.squeeze(actions))
                     r = np.array([
