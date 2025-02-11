@@ -258,13 +258,9 @@ class MPC(object):
         self.decoder_net.reset_hidden(self.batch_size, flag=True)
         dec_s = self.decoder_net(state[:,0,:].squeeze(1))
 
-        lk = np.zeros((self.batch_size, 11))
         for i, env in enumerate(vec_env.envs):
-            lk[i,:], _ = env.reset_specific(state=dec_s[i].cpu().detach().numpy())
-        for i in range(self.batch_size):
-            print(i)
-            print(dec_s[i])
-            print(lk[i,:])
+            env.reset_specific(state=dec_s[i].cpu().detach().numpy())
+
         loss_tran = 0
         loss_rec = 0
         rewards = np.zeros(self.batch_size)
