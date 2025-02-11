@@ -7,8 +7,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from itertools import combinations
 import numpy as np
-from joblib import Parallel, delayed
-import datetime
+from stable_baselines3.common.vec_env import DummyVecEnv
 
 def reacher_source_R(state, action):
     vec = state[-3:]#.detach().cpu().numpy()    # last 3 dim
@@ -275,62 +274,23 @@ class MPC(object):
         return traj_state, traj_action
 
     
-    def __decodeTraj(self, s, a): ## 0.54
-        with torch.no_grad():
-            env = gym.make(self.source_env, exclude_current_positions_from_observation=False).unwrapped if self.env=="cheetah" else gym.make(self.source_env).unwrapped
-            env.reset(seed = self.seed)
-            traj_action = []
-            reward_list = []
-            for i in range(self.N):
-                self.decoder_net.reset_hidden(1)
-                traj_action_one = []
-                reward = 0
-                state = self.decoder_net(s[i,0,:].unsqueeze(0)).squeeze(0)
-                env.reset_specific(state = state.cpu().detach().numpy())
-                for j in range(self.h):
-                    action = self.agent.get_action(state.cpu(), deterministic=True)
-                    #action, _ = self.agent.predict(state.cpu().detach().numpy(), deterministic=True) # SB3-SAC default
-                    #action = self.agent.policy.actor(state.unsqueeze(0), deterministic=True) # SB3-SAC GPU
-
-                    if self.env == "reacher":
-                        r = reacher_source_R(state, action).cpu().detach().numpy()
-                    elif self.env == "cheetah":
-                        next_s, r, _, _, _ = env.step(np.squeeze(action))
-                        r = cheetah_source_R(state, action, next_s).cpu().detach().numpy()
-
-                    reward += r
-                    next_state = self.decoder_net(s[i,j+1,:].unsqueeze(0)).squeeze(0)
-                    traj_action_one.append(a[i,j,:])
-                    state = next_state
-                traj_action.append(traj_action_one)
-                reward_list.append(reward)
-
-        data = [(xi, yi) for xi, yi in zip(traj_action, reward_list)]
-        sorted_action = sorted(data, key=lambda pair: pair[1], reverse=self.reverse)
-        
-        sorted_action = [torch.stack(item[0]) for item in sorted_action]
-        sorted_action = torch.stack(sorted_action)
-
-        return sorted_action[0,0,:]
-
-
-
-    # def __decodeTraj(self, s, a): ## 0.43s
+    # def __decodeTraj(self, s, a): ## 0.54
     #     with torch.no_grad():
     #         env = gym.make(self.source_env, exclude_current_positions_from_observation=False).unwrapped if self.env=="cheetah" else gym.make(self.source_env).unwrapped
     #         env.reset(seed = self.seed)
-    #         self.decoder_net.reset_hidden(self.N* (self.h+1))
-    #         decoded_states = self.decoder_net(s.view(self.N * (self.h+1), -1))
-    #         decoded_states = decoded_states.view(self.N, self.h+1, -1)
     #         traj_action = []
     #         reward_list = []
+    #         time1 = datetime.datetime.now()
     #         for i in range(self.N):
+    #             self.decoder_net.reset_hidden(1)
     #             traj_action_one = []
     #             reward = 0
-    #             state = decoded_states[i, 0, :]
+    #             state = self.decoder_net(s[i,0,:].unsqueeze(0)).squeeze(0)
     #             env.reset_specific(state = state.cpu().detach().numpy())
     #             for j in range(self.h):
     #                 action = self.agent.get_action(state.cpu(), deterministic=True)
+    #                 #action, _ = self.agent.predict(state.cpu().detach().numpy(), deterministic=True) # SB3-SAC default
+    #                 #action = self.agent.policy.actor(state.unsqueeze(0), deterministic=True) # SB3-SAC GPU
 
     #                 if self.env == "reacher":
     #                     r = reacher_source_R(state, action).cpu().detach().numpy()
@@ -339,11 +299,13 @@ class MPC(object):
     #                     r = cheetah_source_R(state, action, next_s).cpu().detach().numpy()
 
     #                 reward += r
-    #                 next_state = decoded_states[i, j+1, :]
+    #                 next_state = self.decoder_net(s[i,j+1,:].unsqueeze(0)).squeeze(0)
     #                 traj_action_one.append(a[i,j,:])
     #                 state = next_state
     #             traj_action.append(traj_action_one)
     #             reward_list.append(reward)
+    #         time2 = datetime.datetime.now()        
+    #         print(f'Time taken 1111: {time2 - time1}')
 
     #     data = [(xi, yi) for xi, yi in zip(traj_action, reward_list)]
     #     sorted_action = sorted(data, key=lambda pair: pair[1], reverse=self.reverse)
@@ -352,11 +314,55 @@ class MPC(object):
     #     sorted_action = torch.stack(sorted_action)
 
     #     return sorted_action[0,0,:]
+    
+    def __decodeTraj(self, s, a): ## 0.17
+        with torch.no_grad():
+            def make_env(seed):
+                def _init():
+                    if self.env == "cheetah":
+                        env = gym.make(self.source_env, exclude_current_positions_from_observation=False).unwrapped
+                    else:
+                        env = gym.make(self.source_env).unwrapped
+                    env.reset(seed=seed)
+                    return env
+                return _init
+
+            env_fns = [make_env(self.seed) for _ in range(self.N)]
+            vec_env = DummyVecEnv(env_fns)
+
+            self.decoder_net.reset_hidden(self.N)
+            states = self.decoder_net(s[:, 0, :])
+
+            for i, env in enumerate(vec_env.envs):
+                env.reset_specific(state=states[i].cpu().detach().numpy())
+            
+            rewards = np.zeros(self.N)
+            for j in range(self.h):
+                actions = self.agent.get_action(states.cpu(), deterministic=True)
+                #actions, _ = self.agent.predict(states.cpu().detach().numpy(), deterministic=True) # SB3-SAC default
+                #actions = self.agent.policy.actor(states.unsqueeze(0), deterministic=True) # SB3-SAC GPU
+
+                if self.env == "reacher":
+                    r = reacher_source_R(states, actions).cpu().detach().numpy()
+                elif self.env == "cheetah":
+                    obs, r, _, _ = vec_env.step(np.squeeze(actions))
+                    r = np.array([
+                        cheetah_source_R(states[i], actions[i], obs[i]).cpu().detach().numpy()
+                        for i in range(self.N)
+                    ])
+
+                next_states = self.decoder_net(s[:, j+1, :])
+                rewards += r
+                states = next_states
+
+            best_idx = np.argsort(rewards)[-1]
+            best_action = a[best_idx, 0, :]
+        return best_action
 
 
     def evaluate(self):
         env_target = gym.make(self.target_env, render_mode='rgb_array') #rgb_array
-        #env_target = gym.wrappers.RecordVideo(env_target, 'video')
+        env_target = gym.wrappers.RecordVideo(env_target, 'video')
         self.decoder_net.eval()
 
         s0, _ = env_target.reset(seed=self.seed)
@@ -369,12 +375,7 @@ class MPC(object):
             a0_target = self.__decodeTraj(s, a)
 
             s1, r1, terminated, truncated, _ = env_target.step(a0_target.cpu().detach().numpy())
-
-            # print(i)
-            # print(s1)
-            # print(a0_target)
-            # print(r1)
-            # print()
+            
             done = truncated or terminated
             total_reward += r1
             s0 = s1
