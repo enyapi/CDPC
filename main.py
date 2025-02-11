@@ -49,8 +49,8 @@ def collect_target_data(agent_target, target_env, n_traj, expert_ratio, device):
         print("episode:{}, Return:{}, buffer_capacity:{}".format(episode, score, buffer.buffer_len()))
     env_target.close()
     
-    print(f"Collected {buffer.buffer_len()} trajectories.")
-    print(f"Collected {buffer.buffer_len()*max_episode_steps} transitions.")
+    print(f"Collected {n_traj} trajectories.")
+    print(f"Collected {n_traj*max_episode_steps} transitions.")
     return train_set, buffer
 
 

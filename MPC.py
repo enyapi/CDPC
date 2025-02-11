@@ -7,6 +7,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from itertools import combinations
 import numpy as np
+from joblib import Parallel, delayed
+import datetime
 
 def reacher_source_R(state, action):
     vec = state[-3:]#.detach().cpu().numpy()    # last 3 dim
@@ -241,37 +243,39 @@ class MPC(object):
             return trajectory_info_b, trajectory_info_a
     
 
-    def __syntheticTraj(self, state):
+    def __sampleTraj(self, state): ## 0.008s
         self.mpc_policy_net.eval()
-        action = self.mpc_policy_net(torch.tensor(state, dtype=torch.float32).to(self.device))
+        state = torch.tensor(state, dtype=torch.float32, device=self.device)
+        
+        action = self.mpc_policy_net(state)
 
-        traj_state = []
-        traj_action = torch.zeros((self.N, self.h, self.target_action_space_dim)).to(self.device)
-        for i in range(self.N):
-            traj_state_one = []
-            traj_state_one.append(state)
-            s = state
-            if i != 0:
-                noise = torch.randn_like(action) * 0.1
-                a = action + noise 
-                traj_action[i,0,:] = a
-            else:
-                a = action
-                traj_action[i,0,:] = a
-            for j in range(1, self.h):
-                s = self.dynamic_model(torch.cat([torch.tensor(s, dtype=torch.float32).to(self.device), a], dim=0))
-                traj_state_one.append(s)
-                a = self.mpc_policy_net(torch.tensor(s, dtype=torch.float32).to(self.device))
-                traj_action[i,j,:] = a
-            s = self.dynamic_model(torch.cat([torch.tensor(s, dtype=torch.float32).to(self.device), a], dim=0))
-            traj_state_one.append(s)
+        traj_state = torch.zeros((self.N, self.h+1, state.shape[-1]), dtype=torch.float32, device=self.device)
+        traj_action = torch.zeros((self.N, self.h, self.target_action_space_dim), dtype=torch.float32, device=self.device)
+        
+        traj_state[:, 0, :] = state 
+        
+        noise = torch.randn((self.N, *action.shape), dtype=torch.float32, device=self.device) * 0.1
+        action_noisy = action + noise
+        action_noisy[0] = action
+        traj_action[:, 0, :] = action_noisy
 
-            traj_state.append(traj_state_one)
-        traj_state = torch.tensor(traj_state, dtype=torch.float32).to(self.device)
+        s = state.repeat(self.N, 1)
+        a = action_noisy
+
+        for j in range(1, self.h):
+            s = self.dynamic_model(torch.cat([s, a], dim=-1))
+            traj_state[:, j, :] = s
+
+            a = self.mpc_policy_net(s)
+            traj_action[:, j, :] = a
+
+        s = self.dynamic_model(torch.cat([s, a], dim=-1))
+        traj_state[:, self.h, :] = s
+
         return traj_state, traj_action
 
     
-    def __decodeTraj(self, s, a):
+    def __decodeTraj(self, s, a): ## 0.54
         with torch.no_grad():
             env = gym.make(self.source_env, exclude_current_positions_from_observation=False).unwrapped if self.env=="cheetah" else gym.make(self.source_env).unwrapped
             env.reset(seed = self.seed)
@@ -288,11 +292,11 @@ class MPC(object):
                     #action, _ = self.agent.predict(state.cpu().detach().numpy(), deterministic=True) # SB3-SAC default
                     #action = self.agent.policy.actor(state.unsqueeze(0), deterministic=True) # SB3-SAC GPU
 
-                    #next_state, r, _, _, _ = env.step(np.squeeze(action))
                     if self.env == "reacher":
                         r = reacher_source_R(state, action).cpu().detach().numpy()
                     elif self.env == "cheetah":
-                        r = cheetah_source_R(state, action, tran_s1_tensor).cpu().detach().numpy()
+                        next_s, r, _, _, _ = env.step(np.squeeze(action))
+                        r = cheetah_source_R(state, action, next_s).cpu().detach().numpy()
 
                     reward += r
                     next_state = self.decoder_net(s[i,j+1,:].unsqueeze(0)).squeeze(0)
@@ -310,19 +314,67 @@ class MPC(object):
         return sorted_action[0,0,:]
 
 
+
+    # def __decodeTraj(self, s, a): ## 0.43s
+    #     with torch.no_grad():
+    #         env = gym.make(self.source_env, exclude_current_positions_from_observation=False).unwrapped if self.env=="cheetah" else gym.make(self.source_env).unwrapped
+    #         env.reset(seed = self.seed)
+    #         self.decoder_net.reset_hidden(self.N* (self.h+1))
+    #         decoded_states = self.decoder_net(s.view(self.N * (self.h+1), -1))
+    #         decoded_states = decoded_states.view(self.N, self.h+1, -1)
+    #         traj_action = []
+    #         reward_list = []
+    #         for i in range(self.N):
+    #             traj_action_one = []
+    #             reward = 0
+    #             state = decoded_states[i, 0, :]
+    #             env.reset_specific(state = state.cpu().detach().numpy())
+    #             for j in range(self.h):
+    #                 action = self.agent.get_action(state.cpu(), deterministic=True)
+
+    #                 if self.env == "reacher":
+    #                     r = reacher_source_R(state, action).cpu().detach().numpy()
+    #                 elif self.env == "cheetah":
+    #                     next_s, r, _, _, _ = env.step(np.squeeze(action))
+    #                     r = cheetah_source_R(state, action, next_s).cpu().detach().numpy()
+
+    #                 reward += r
+    #                 next_state = decoded_states[i, j+1, :]
+    #                 traj_action_one.append(a[i,j,:])
+    #                 state = next_state
+    #             traj_action.append(traj_action_one)
+    #             reward_list.append(reward)
+
+    #     data = [(xi, yi) for xi, yi in zip(traj_action, reward_list)]
+    #     sorted_action = sorted(data, key=lambda pair: pair[1], reverse=self.reverse)
+        
+    #     sorted_action = [torch.stack(item[0]) for item in sorted_action]
+    #     sorted_action = torch.stack(sorted_action)
+
+    #     return sorted_action[0,0,:]
+
+
     def evaluate(self):
-        env_target = gym.make(self.target_env)#, render_mode='human')
+        env_target = gym.make(self.target_env, render_mode='rgb_array') #rgb_array
+        env_target = gym.wrappers.RecordVideo(env_target, 'video')
         self.decoder_net.eval()
-        s0, _ = env_target.reset(seed = self.seed)
+
+        s0, _ = env_target.reset(seed=self.seed)
         total_reward = 0
-        for _ in range(env_target.spec.max_episode_steps):
+        for i in range(env_target.spec.max_episode_steps):
             ## MPC inference
             # generate action sequence using policy network and get state sequence
-            s, a = self.__syntheticTraj(s0)
+            s, a = self.__sampleTraj(s0)
             # decode state sequence to source state sequence and get sorted action sequence (in terms of reward)
             a0_target = self.__decodeTraj(s, a)
 
             s1, r1, terminated, truncated, _ = env_target.step(a0_target.cpu().detach().numpy())
+
+            print(i)
+            print(s1)
+            print(a0_target)
+            print(r1)
+            print()
             done = truncated or terminated
             total_reward += r1
             s0 = s1
