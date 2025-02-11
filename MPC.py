@@ -356,7 +356,7 @@ class MPC(object):
 
     def evaluate(self):
         env_target = gym.make(self.target_env, render_mode='rgb_array') #rgb_array
-        env_target = gym.wrappers.RecordVideo(env_target, 'video')
+        #env_target = gym.wrappers.RecordVideo(env_target, 'video')
         self.decoder_net.eval()
 
         s0, _ = env_target.reset(seed=self.seed)
@@ -370,11 +370,11 @@ class MPC(object):
 
             s1, r1, terminated, truncated, _ = env_target.step(a0_target.cpu().detach().numpy())
 
-            print(i)
-            print(s1)
-            print(a0_target)
-            print(r1)
-            print()
+            # print(i)
+            # print(s1)
+            # print(a0_target)
+            # print(r1)
+            # print()
             done = truncated or terminated
             total_reward += r1
             s0 = s1
