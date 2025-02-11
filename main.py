@@ -160,6 +160,18 @@ if __name__ == '__main__':
     ##### 3 Collecting target domain data #####
     print("##### Collecting target domain data #####")
     train_set, buffer = collect_target_data(agent_target, target_env, args.n_traj, args.expert_ratio, args.device)
+    import pickle
+    # def save_buffer(buffer, filename):
+    #     with open(filename, 'wb') as f:
+    #         pickle.dump(buffer, f)
+
+    # def load_buffer(filename):
+    #     with open(filename, 'rb') as f:
+    #         return pickle.load(f)
+
+    # #save_buffer(train_set, '2_cheetah_0.8.pkl')
+    # train_set = load_buffer('2_cheetah_0.8.pkl')
+    # print(train_set.buffer_len())
 
 
     ##### 4 Train or Loading MPC policy and Dynamic Model #####
