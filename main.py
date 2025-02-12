@@ -11,10 +11,11 @@ from sac_v2 import PolicyNetwork
 from MPC_DM_model import ReplayBuffer, MPC_DM
 from MPC import ReplayBuffer_traj, MPC
 
+
 warnings.filterwarnings('ignore')
 
 
-def collect_target_data(agent_target, target_env, n_traj, expert_ratio, device):
+def collect_target_data(agent_target, target_env, n_traj, expert_ratio, device, seed):
     buffer_maxlen = 1000000
     buffer = ReplayBuffer(buffer_maxlen, device)
     train_set = ReplayBuffer_traj()
@@ -23,7 +24,7 @@ def collect_target_data(agent_target, target_env, n_traj, expert_ratio, device):
     max_episode_steps = env_target.spec.max_episode_steps 
     for episode in range(int(n_traj)):
         score = 0
-        state, _ = env_target.reset()
+        state, _ = env_target.reset(seed=seed*episode) ############################################
         state_list = []
         next_state_list = []
         for _ in range(max_episode_steps):
@@ -57,11 +58,11 @@ def collect_target_data(agent_target, target_env, n_traj, expert_ratio, device):
 def CDPC(mpc, train_set, mpc_location):
     Return_val = []
     # val state decoder
-    total_reward = mpc.evaluate() 
-    wandb.log({"cdpc episode": 0, "valid/reward": total_reward, })
+    # total_reward = mpc.evaluate() 
+    # wandb.log({"cdpc episode": 0, "valid/reward": total_reward, })
 
-    Return_val.append(total_reward)
-    print(f'episode: {0}, validation reward: {total_reward}')
+    # Return_val.append(total_reward)
+    # print(f'episode: {0}, validation reward: {total_reward}')
     
     for j in range(1, args.decoder_ep+1):
         # train state decoder
@@ -101,6 +102,7 @@ def seed_everything(seed):
     os.environ['PYTHONHASHSEED'] = str(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False        
 
@@ -112,7 +114,7 @@ if __name__ == '__main__':
     parser.add_argument("decoder_batch", type=int, nargs='?', default=32)
     parser.add_argument("--seed", type=int, nargs='?', default=2)
     parser.add_argument("--n_traj", type=int, nargs='?', default=10000) # 1000/10000
-    parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.8) # random_ratio=1-expert_ratio
+    parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.2) # random_ratio=1-expert_ratio
     parser.add_argument("--decoder_ep", type=int, nargs='?', default=500) # 500/200
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
     parser.add_argument("--env", type=str, nargs='?', default="cheetah") # cheetah reacher
@@ -120,7 +122,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     seed_everything(args.seed)
 
-    wandb.init(project="cdpc", name = f'cdpc {str(args.seed)}_{args.env} {str(args.expert_ratio)}_expert')
+    #wandb.init(project="cdpc", name = f'cdpc {str(args.seed)}_{args.env} {str(args.expert_ratio)}_expert')
     location = f'./models/{args.env}/seed_{str(args.seed)}/'
     mpc_location = f'{location}/expert_ratio_{args.expert_ratio}/'
 
@@ -159,7 +161,7 @@ if __name__ == '__main__':
 
     ##### 3 Collecting target domain data #####
     print("##### Collecting target domain data #####")
-    train_set, buffer = collect_target_data(agent_target, target_env, args.n_traj, args.expert_ratio, args.device)
+    train_set, buffer = collect_target_data(agent_target, target_env, args.n_traj, args.expert_ratio, args.device, args.seed)
     import pickle
     # def save_buffer(buffer, filename):
     #     with open(filename, 'wb') as f:

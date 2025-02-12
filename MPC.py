@@ -9,6 +9,7 @@ from itertools import combinations
 import numpy as np
 from stable_baselines3.common.vec_env import DummyVecEnv
 
+
 def reacher_source_R(state, action):
     vec = state[-3:]#.detach().cpu().numpy()    # last 3 dim
     reward_dist = -torch.norm(vec)
@@ -97,7 +98,6 @@ class Decoder_Net(nn.Module):
         else:
             self.hidden = ((torch.randn(self.num_layers, batch_size, self.hidden_size) * 0.01 + 0.0).to(self.device), (torch.randn(self.num_layers, batch_size, self.hidden_size)*0.001).to(self.device))
             return self.hidden
-    
 
 class Encoder_Net(nn.Module):
     def __init__(self, input_size, output_size):
@@ -168,12 +168,8 @@ class MPC(object):
         
         # update state decoder
         ## traj a, b
-        #import datetime
-        #time1 = datetime.datetime.now()   
         R_s_a_tensor, loss_tran_a, loss_rec_a = self.train_loss(state_a, next_state_a)
         R_s_b_tensor, loss_tran_b, loss_rec_b = self.train_loss(state_b, next_state_b)
-        #time2 = datetime.datetime.now()        
-        #print(f'Time taken 2-1: {time2 - time1}')
 
         ## transition loss
         loss_tran = (loss_tran_a+loss_tran_b) / state_a[0,:,0].shape[0] # trajectory length
@@ -199,44 +195,6 @@ class MPC(object):
 
         return loss_tran.item(), loss_pref.item(), loss_rec.item(), pref_acc
     
-
-    # def train_loss(self, state, next_state):
-    #     loss_function = nn.MSELoss()
-    #     env = gym.make(self.source_env, exclude_current_positions_from_observation=False).unwrapped if self.env=="cheetah" else gym.make(self.source_env).unwrapped
-    #     env.reset(seed = self.seed)
-    #     loss_tran = 0
-    #     loss_rec = 0
-    #     R_s_tensor = torch.zeros((self.batch_size, 1)).to(self.device)
-    #     self.decoder_net.reset_hidden(self.batch_size, flag=True)
-    #     dec_s = self.decoder_net(state[:,0,:].squeeze(1))
-    #     for i in range(state[0,:,0].shape[0]): # trajectory length
-    #         tran_s1 = []
-    #         for b in range(self.batch_size):
-    #             env.reset_specific(state = dec_s[b].cpu().detach().numpy())
-
-    #             action = self.agent.get_action(dec_s[b].cpu(), deterministic=True)
-    #             #action, _ = self.agent.predict(dec_s[b].cpu().detach().numpy(), deterministic=True) # SB3-SAC default
-    #             #action = self.agent.policy.actor(dec_s[b], deterministic=True) # SB3-SAC GPU
-
-    #             tmp = env.step(np.squeeze(action))
-    #             tran_s1_tensor = torch.tensor(tmp[0], dtype=torch.float32).unsqueeze(0).to(self.device)
-    #             tran_s1.append(tran_s1_tensor)
-    #             ##
-    #             if self.env == "reacher":
-    #                 r = reacher_source_R(dec_s[b], action)
-    #             elif self.env == "cheetah":
-    #                 r = cheetah_source_R(dec_s[b], action, tran_s1_tensor.squeeze(0))
-    #             R_s_tensor[b] += (0.99**i)*r
-
-    #         tran_s1 = torch.stack(tran_s1, dim=0).squeeze(1)
-    #         dec_s1 = self.decoder_net(next_state[:,i,:].squeeze(1))
-    #         loss_tran += loss_function(tran_s1, dec_s1)
-
-    #         rec_s = self.encoder_net(dec_s)  ###
-    #         loss_rec += loss_function(rec_s, state[:,i,:].squeeze(1))  ###
-    #         dec_s = dec_s1
-    #     env.close()
-    #     return R_s_tensor, loss_tran, loss_rec
     
     def make_env(self, seed):
         def _init():
@@ -258,29 +216,24 @@ class MPC(object):
         self.decoder_net.reset_hidden(self.batch_size, flag=True)
         dec_s = self.decoder_net(state[:,0,:].squeeze(1))
 
-        for i, env in enumerate(vec_env.envs):
-            env.reset_specific(state=dec_s[i].cpu().detach().numpy())
-
         loss_tran = 0
         loss_rec = 0
-        rewards = np.zeros(self.batch_size)
+        R_s_tensor = torch.zeros((self.batch_size, 1)).to(self.device)
 
         for i in range(state[0,:,0].shape[0]): # trajectory length
+            for n, env in enumerate(vec_env.envs):
+                env.reset_specific(state=dec_s[n].cpu().detach().numpy())
+            
             actions = self.agent.get_action(dec_s.cpu(), deterministic=True)
-            tran_s1, r, _, _ = vec_env.step(np.squeeze(actions))
+            tran_s1, r, _, _ = vec_env.step(actions)
             tran_s1 = torch.tensor(tran_s1, dtype=torch.float32).to(self.device)
 
-            if self.env == "reacher":
-                r = np.array([
-                    reacher_source_R(dec_s[b], actions[b]).cpu().detach().numpy()
-                    for b in range(self.batch_size)
-                ])
-            elif self.env == "cheetah":
-                r = np.array([
-                    cheetah_source_R(dec_s[b], actions[b], tran_s1[b]).cpu().detach().numpy()
-                    for b in range(self.batch_size)
-                ])
-            rewards += (0.99**i)*r
+            for b in range(self.batch_size):
+                if self.env == "reacher":
+                    r = reacher_source_R(dec_s[b], actions[b])
+                elif self.env == "cheetah":
+                    r = cheetah_source_R(dec_s[b], actions[b], tran_s1[b])
+                R_s_tensor[b] += (0.99**i)*r
 
             dec_s1 = self.decoder_net(next_state[:,i,:].squeeze(1))
             loss_tran += loss_function(tran_s1, dec_s1)
@@ -289,7 +242,6 @@ class MPC(object):
             loss_rec += loss_function(rec_s, state[:,i,:].squeeze(1))  ###
             dec_s = dec_s1
         vec_env.close()
-        R_s_tensor = torch.tensor(rewards, dtype=torch.float32).to(self.device).view(self.batch_size, 1)
         return R_s_tensor, loss_tran, loss_rec
     
 
@@ -339,12 +291,12 @@ class MPC(object):
 
             self.decoder_net.reset_hidden(self.N)
             states = self.decoder_net(s[:, 0, :])
-
-            for i, env in enumerate(vec_env.envs):
-                env.reset_specific(state=states[i].cpu().detach().numpy())
             
             rewards = np.zeros(self.N)
             for j in range(self.h):
+                for i, env in enumerate(vec_env.envs):
+                    env.reset_specific(state=states[i].cpu().detach().numpy())
+
                 actions = self.agent.get_action(states.cpu(), deterministic=True)
                 #actions, _ = self.agent.predict(states.cpu().detach().numpy(), deterministic=True) # SB3-SAC default
                 #actions = self.agent.policy.actor(states.unsqueeze(0), deterministic=True) # SB3-SAC GPU
@@ -355,7 +307,7 @@ class MPC(object):
                         for i in range(self.N)
                     ])
                 elif self.env == "cheetah":
-                    obs, r, _, _ = vec_env.step(np.squeeze(actions))
+                    obs, r, _, _ = vec_env.step(actions)
                     r = np.array([
                         cheetah_source_R(states[i], actions[i], obs[i]).cpu().detach().numpy()
                         for i in range(self.N)
