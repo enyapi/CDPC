@@ -58,11 +58,11 @@ def collect_target_data(agent_target, target_env, n_traj, expert_ratio, device, 
 def CDPC(mpc, train_set, mpc_location):
     Return_val = []
     # val state decoder
-    # total_reward = mpc.evaluate() 
-    # wandb.log({"cdpc episode": 0, "valid/reward": total_reward, })
+    total_reward = mpc.evaluate() 
+    wandb.log({"cdpc episode": 0, "valid/reward": total_reward, })
 
-    # Return_val.append(total_reward)
-    # print(f'episode: {0}, validation reward: {total_reward}')
+    Return_val.append(total_reward)
+    print(f'episode: {0}, validation reward: {total_reward}')
     
     for j in range(1, args.decoder_ep+1):
         # train state decoder
@@ -122,7 +122,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     seed_everything(args.seed)
 
-    #wandb.init(project="cdpc", name = f'cdpc {str(args.seed)}_{args.env} {str(args.expert_ratio)}_expert')
+    wandb.init(project="cdpc", name = f'cdpc {str(args.seed)}_{args.env} {str(args.expert_ratio)}_expert')
     location = f'./models/{args.env}/seed_{str(args.seed)}/'
     mpc_location = f'{location}/expert_ratio_{args.expert_ratio}/'
 
