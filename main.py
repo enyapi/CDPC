@@ -122,7 +122,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     seed_everything(args.seed)
 
-    wandb.init(project="cdpc", name = f'cdpc {str(args.seed)}_{args.env} {str(args.expert_ratio)}_expert')
+    wandb.init(project="cdpc", name = f'cdpc {str(args.seed)}_{args.env} {str(args.expert_ratio)}_expert: no loss_rec')
     location = f'./models/{args.env}/seed_{str(args.seed)}/'
     mpc_location = f'{location}/expert_ratio_{args.expert_ratio}/'
 

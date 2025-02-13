@@ -183,15 +183,15 @@ class MPC(object):
         loss_pref = torch.sum(sub_first_rewards.exp(), -1).log().mean()
         pref_acc = (sub_first_rewards[:,1] < 0).sum().item() / self.batch_size
         
-        dec_loss = loss_tran + loss_rec + loss_pref # no preference loss
-        enc_loss = loss_rec
+        dec_loss = loss_tran + loss_pref # no preference loss, loss_rec
+        #enc_loss = loss_rec
 
         self.dec_optimizer.zero_grad()
-        self.enc_optimizer.zero_grad()
+        #self.enc_optimizer.zero_grad()
         dec_loss.backward(retain_graph=True)
-        enc_loss.backward(retain_graph=True)
+        #enc_loss.backward(retain_graph=True)
         self.dec_optimizer.step()
-        self.enc_optimizer.step()
+        #self.enc_optimizer.step()
 
         return loss_tran.item(), loss_pref.item(), loss_rec.item(), pref_acc
     
