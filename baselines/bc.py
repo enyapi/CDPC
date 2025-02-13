@@ -13,7 +13,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sac_v2 import PolicyNetwork
 
-def collect_target_data(agent_target, env_target, n_traj, expert_ratio, bc_ratio):
+def collect_target_data(agent_target, env_target, seed, n_traj, expert_ratio, bc_ratio):
     max_episode_steps = env_target.spec.max_episode_steps
 
     all_trajectories = []
@@ -22,7 +22,7 @@ def collect_target_data(agent_target, env_target, n_traj, expert_ratio, bc_ratio
     for episode in range(int(n_traj)):
         episode_data = {"obs": [], "acts": [], "next_obs": [], "dones": []}
         score = 0
-        state, _ = env_target.reset()
+        state, _ = env_target.reset(seed=seed*episode)
         for _ in range(max_episode_steps):
             if episode < int(n_traj*expert_ratio):
                 action = agent_target.get_action(state, deterministic=True)
@@ -89,6 +89,7 @@ def seed_everything(seed):
     os.environ['PYTHONHASHSEED'] = str(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -120,7 +121,7 @@ if __name__ == '__main__':
         env = gym.make("HalfCheetah-3legs")
 
     # parameters
-    batch_size = 32*env.spec.max_episode_steps
+    batch_size = 32*2 * env.spec.max_episode_steps
     hidden_dim = 512
     action_range = 10.0 if args.env=="reacher" else 1.0
     action_dim = env.action_space.shape[0]
@@ -133,7 +134,7 @@ if __name__ == '__main__':
 
     # Create the Transitions object
     n_traj = args.n_traj
-    transitions = collect_target_data(trained_agent, env, n_traj, args.expert_ratio, args.bc_ratio)
+    transitions = collect_target_data(trained_agent, env, args.seed, n_traj, args.expert_ratio, args.bc_ratio)
 
     # Initialize Behavioral Cloning
     bc_trainer = bc.BC(

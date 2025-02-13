@@ -11,11 +11,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sac_v2 import ReplayBuffer, PolicyNetwork, SAC
 
 
-def collect_target_data(agent_target, env_target, n_traj, expert_ratio, buffer):
+def collect_target_data(agent_target, env_target, seed, n_traj, expert_ratio, buffer):
     max_episode_steps = env_target.spec.max_episode_steps
     for episode in range(int(n_traj)):
         score = 0
-        state, _ = env_target.reset()
+        state, _ = env_target.reset(seed=seed*episode)
         for _ in range(max_episode_steps):
             if episode < int(n_traj*expert_ratio):
                 action = agent_target.get_action(state, deterministic=True)
@@ -73,7 +73,7 @@ if __name__ == '__main__':
     
 
     # Params
-    batch_size = 32*env.spec.max_episode_steps
+    batch_size = 32*2 * env.spec.max_episode_steps
     replay_buffer_size = 1e6
     replay_buffer = ReplayBuffer(replay_buffer_size)
     hidden_dim = 512
@@ -96,7 +96,7 @@ if __name__ == '__main__':
     if not os.path.exists(location): os.makedirs(location)
     if not os.path.exists(f'{location}/{str(args.seed)}_{args.env}_sac_off_tr.pth'):
         ## collect offline data
-        collect_target_data(trained_agent, env, args.n_traj, args.expert_ratio, replay_buffer)
+        collect_target_data(trained_agent, env, args.seed, args.n_traj, args.expert_ratio, replay_buffer)
 
         ## train sac_off_tr
         test_score = agent.evaluate()
