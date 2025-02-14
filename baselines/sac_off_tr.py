@@ -93,7 +93,7 @@ if __name__ == '__main__':
     trained_agent.load_state_dict(torch.load( model_path, map_location=args.device ))
     agent = SAC(replay_buffer, hidden_dim=hidden_dim, action_range=action_range, args=args, observation_space=state_dim, action_space=action_dim, device=device)
 
-    if not os.path.exists(location): os.makedirs(location)
+    os.makedirs(location, exist_ok=True)
     if not os.path.exists(f'{location}/{str(args.seed)}_{args.env}_sac_off_tr.pth'):
         ## collect offline data
         collect_target_data(trained_agent, env, args.seed, args.n_traj, args.expert_ratio, replay_buffer)

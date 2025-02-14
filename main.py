@@ -179,7 +179,7 @@ if __name__ == '__main__':
 
     ##### 4 Train or Loading MPC policy and Dynamic Model #####
     mpc_dm = MPC_DM(target_s_dim, target_a_dim, args.device)
-    if not os.path.exists(mpc_location): os.makedirs(mpc_location)
+    os.makedirs(mpc_location, exist_ok=True)
     if os.path.exists(f'{mpc_location}/{str(args.seed)}_MPCModel.pth'):
         print("##### Loading MPC policy and Dynamic Model #####")
         mpc_dm.mpc_policy_net.load_state_dict(torch.load( f'{mpc_location}/{str(args.seed)}_MPCModel.pth', map_location=args.device ))
@@ -197,7 +197,7 @@ if __name__ == '__main__':
     ##### 4.5 Load Flow Model #####
     flow_model = None
     if args.use_flow:
-        from normalizing_flow.core.flow.real_nvp import RealNvp
+        from flowpg.core.flow.real_nvp import RealNvp
         flow_loc = f"normalizing_flow/flow_model/{args.env}/state/flow_seed{str(args.seed)}.pt"
         flow_model = RealNvp.load_module(flow_loc).to(args.device)
         flow_model.disable_grad(True)

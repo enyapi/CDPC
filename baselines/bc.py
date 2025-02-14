@@ -146,7 +146,7 @@ if __name__ == '__main__':
         device=device,
     )
 
-    if not os.path.exists(location): os.makedirs(location)
+    os.makedirs(location, exist_ok=True)
     if not os.path.exists(f'{location}/{str(args.seed)}_{args.env}_bc_{args.bc_ratio}.pth'):
         # Train BC policy and evaluate after each epoch
         mean_reward, std_reward = evaluate_policy(bc_trainer.policy, env, n_eval_episodes=10)
