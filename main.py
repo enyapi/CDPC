@@ -112,6 +112,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("MPC_pre_ep", type=int, nargs='?', default=10000)
     parser.add_argument("decoder_batch", type=int, nargs='?', default=32)
+    parser.add_argument("use_flow", type=bool, nargs='?', default=False)
     parser.add_argument("--seed", type=int, nargs='?', default=2)
     parser.add_argument("--n_traj", type=int, nargs='?', default=10000) # 1000/10000
     parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.2) # random_ratio=1-expert_ratio
@@ -122,7 +123,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     seed_everything(args.seed)
 
-    wandb.init(project="cdpc", name = f'cdpc {str(args.seed)}_{args.env} {str(args.expert_ratio)}_expert: no loss_rec')
+    wandb.init(project="cdpc", name = f'cdpc {str(args.seed)}_{args.env} {str(args.expert_ratio)}_expert')
     location = f'./models/{args.env}/seed_{str(args.seed)}/'
     mpc_location = f'{location}/expert_ratio_{args.expert_ratio}/'
 
@@ -192,6 +193,15 @@ if __name__ == '__main__':
         torch.save(mpc_dm.mpc_policy_net.state_dict(), f'{mpc_location}/{str(args.seed)}_MPCModel.pth')
         torch.save(mpc_dm.dynamic_model.state_dict(), f'{mpc_location}/{str(args.seed)}_DynamicModel.pth')
 
+    
+    ##### 4.5 Load Flow Model #####
+    flow_model = None
+    if args.use_flow:
+        from normalizing_flow.core.flow.real_nvp import RealNvp
+        flow_loc = f"normalizing_flow/flow_model/{args.env}/state/flow_seed{str(args.seed)}.pt"
+        flow_model = RealNvp.load_module(flow_loc).to(args.device)
+        flow_model.disable_grad(True)
+
 
     ##### 5 Training state decoder #####
     print("##### Training state decoder #####")
@@ -209,5 +219,7 @@ if __name__ == '__main__':
         "device": args.device,
         "seed": args.seed,
         "env": args.env,
+        "use_flow": args.use_flow,
+        "flow_model": flow_model,
     }
     CDPC(MPC(**params), train_set, mpc_location)

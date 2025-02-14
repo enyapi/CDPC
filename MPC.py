@@ -215,6 +215,7 @@ class MPC(object):
 
         self.decoder_net.reset_hidden(self.batch_size, flag=True)
         dec_s = self.decoder_net(state[:,0,:].squeeze(1))
+        if self.use_flow: dec_s = self.flow_model.g(dec_s.to(torch.float64))[0]
 
         loss_tran = 0
         loss_rec = 0
@@ -236,6 +237,7 @@ class MPC(object):
                 R_s_tensor[b] += (0.99**i)*r
 
             dec_s1 = self.decoder_net(next_state[:,i,:].squeeze(1))
+            if self.use_flow: dec_s1 = self.flow_model.g(dec_s1.to(torch.float64))[0]
             loss_tran += loss_function(tran_s1, dec_s1)
 
             rec_s = self.encoder_net(dec_s)  ###
@@ -291,6 +293,7 @@ class MPC(object):
 
             self.decoder_net.reset_hidden(self.N)
             states = self.decoder_net(s[:, 0, :])
+            if self.use_flow: states = self.flow_model.g(states.to(torch.float64))[0]
             
             rewards = np.zeros(self.N)
             for j in range(self.h):
@@ -314,6 +317,7 @@ class MPC(object):
                     ])
 
                 next_states = self.decoder_net(s[:, j+1, :])
+                if self.use_flow: next_states = self.flow_model.g(next_states.to(torch.float64))[0]
                 rewards += r
                 states = next_states
 
