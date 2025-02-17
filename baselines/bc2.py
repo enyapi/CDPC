@@ -62,7 +62,7 @@ if __name__ == '__main__':
     # Create a random number generator
     rng = np.random.default_rng(args.seed)
 
-    wandb.init(project="cdpc", name = f'baseline: BC_{args.bc_ratio} {str(args.seed)}_{args.env}')
+    wandb.init(project="cdpc", name = f'baseline: BC2_{args.bc_ratio} {str(args.seed)}_{args.env}')
     location = f'./baselines/bc2/{args.env}/seed_{str(args.seed)}'
 
     # Env
@@ -96,7 +96,7 @@ if __name__ == '__main__':
 
     mpc_dm = MPC_DM(state_dim, action_dim, args.device)
     os.makedirs(location, exist_ok=True)
-    if not os.path.exists(f'{location}/{str(args.seed)}_{args.env}_bc_{args.bc_ratio}.pth'):
+    if not os.path.exists(f'{location}/{str(args.seed)}_{args.env}_bc2_{args.bc_ratio}.pth'):
         reward = evaluate_policy(mpc_dm.mpc_policy_net, env, args.seed, args.device)
         wandb.log({"episode": 0, "test/score": reward})
         print(f"BC Policy (Epoch {0}): mean_reward={reward:.2f}")
@@ -106,5 +106,5 @@ if __name__ == '__main__':
             reward = evaluate_policy(mpc_dm.mpc_policy_net, env, args.seed, args.device)
             wandb.log({"episode": i+1, "test/score": reward})
             print(f"BC Policy (Epoch {i+1}): mean_reward={reward:.2f}")
-        torch.save(mpc_dm.mpc_policy_net.state_dict(), f'{location}/{str(args.seed)}_{args.env}_bc_{args.bc_ratio}.pth')
+        torch.save(mpc_dm.mpc_policy_net.state_dict(), f'{location}/{str(args.seed)}_{args.env}_bc2_{args.bc_ratio}.pth')
 

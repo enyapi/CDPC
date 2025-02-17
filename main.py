@@ -112,7 +112,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("MPC_pre_ep", type=int, nargs='?', default=10000)
     parser.add_argument("decoder_batch", type=int, nargs='?', default=32)
-    parser.add_argument("use_flow", type=bool, nargs='?', default=False)
+    parser.add_argument("--use_flow", type=bool, nargs='?', default=False)
     parser.add_argument("--seed", type=int, nargs='?', default=2)
     parser.add_argument("--n_traj", type=int, nargs='?', default=10000) # 1000/10000
     parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.2) # random_ratio=1-expert_ratio

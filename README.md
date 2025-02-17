@@ -17,9 +17,9 @@ cd ~/CDPC/flowpg
 python -m experiments.train_flow_forward --seed=2 --device='cuda' --env="reacher"
 ```
 
-2. CDPC
+3. CDPC
 ```
-python main.py --seed=7 --n_traj=10000 --expert_ratio=0.2 --decoder_ep=500 --device="cuda" --env="reacher"
+python main.py --seed=7 --n_traj=10000 --expert_ratio=0.2 --decoder_ep=500 --device="cuda" --env="reacher" --use_flow=False
 ```
 
 ## Baselines implementation
@@ -28,7 +28,12 @@ python main.py --seed=7 --n_traj=10000 --expert_ratio=0.2 --decoder_ep=500 --dev
 python baselines/sac_off_tr.py --seed=7 --n_traj=10000 --expert_ratio=0.2 --ep=500 --device="cuda" --env="reacher"
 ```
 
-1. BC
+2. BC: imitation
 ```
 python baselines/bc.py --seed=7 --n_traj=10000 --expert_ratio=0.2 --ep=500 --device="cuda" --env="reacher" --bc_ratio=0.1
+```
+
+3. BC
+```
+python baselines/bc2.py --seed=7 --n_traj=10000 --expert_ratio=0.2 --ep=500 --device="cuda" --env="reacher" --bc_ratio=0.1
 ```
