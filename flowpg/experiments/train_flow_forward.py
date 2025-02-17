@@ -119,7 +119,7 @@ def main(args, data, dim):
             logger.record("train/epoch", epoch+1)
             flush_logs()
             logger.dump(epoch)
-    flow.save_module(f'{args.folder}source/stable-baselines3-1.7.0/model/flow_seed{str(args.seed)}.pt')
+    flow.save_module(f'./flow_models/{args.env}/flow_seed{str(args.seed)}.pt')
 
 
 def seed_everything(seed):
@@ -135,12 +135,10 @@ def seed_everything(seed):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--log_dir", type=str, nargs='?', default='./logs/Hopper/')
     parser.add_argument("--train_sample_count", type=int, nargs='?', default=25000)
     parser.add_argument("--test_sample_count", type=int, nargs='?', default=25000)
     parser.add_argument("--epochs", type=int, nargs='?', default=500)
     parser.add_argument("--eval_freq", type=int, nargs='?', default=1)
-    parser.add_argument("--device", type=str, nargs='?', default='cuda:2')
     parser.add_argument("--lr", type=float, nargs='?', default=1e-5)
     parser.add_argument("--batch_size", type=int, nargs='?', default=256)
     parser.add_argument("--hidden_size", type=int, nargs='?', default=256)
@@ -148,8 +146,8 @@ if __name__ == "__main__":
     parser.add_argument("--mollifier_sigma", type=float, nargs='?', default=0.0001)
     parser.add_argument("--gradient_clip_value", type=float, nargs='?', default=0.1)
     parser.add_argument("--take_log_again", action="store_true")
-    parser.add_argument("--seed", type=int, nargs='?', default=1)
-    parser.add_argument("--folder", type=str, nargs='?', default='/home/')
+    parser.add_argument("--seed", type=int, nargs='?', default=2)
+    parser.add_argument("--device", type=str, nargs='?', default='cuda')
     parser.add_argument("--env", type=str, nargs='?', default='reacher')
     args = parser.parse_args()
 
