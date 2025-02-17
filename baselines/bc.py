@@ -111,7 +111,7 @@ if __name__ == '__main__':
     # Create a random number generator
     rng = np.random.default_rng(args.seed)
 
-    wandb.init(project="cdpc", name = f'baseline: BC_{args.bc_ratio} {str(args.seed)}_{args.env}')
+    wandb.init(project="cdpc", name = f'baseline: BC_{args.bc_ratio} {str(args.seed)}_{args.env}: imitation')
     location = f'./baselines/bc/{args.env}/seed_{str(args.seed)}'
 
     # Env
