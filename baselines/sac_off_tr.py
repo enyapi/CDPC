@@ -62,7 +62,7 @@ if __name__ == '__main__':
     seed_everything(args.seed)
     device = args.device
     
-    wandb.init(project="cdpc", name = f'baseline: SAC-Off-TR {str(args.seed)}_{args.env} no auto entropy')
+    wandb.init(project="cdpc", name = f'baseline: SAC-Off-TR {str(args.seed)}_{args.env}')
     location = f'./baselines/sac_off_tr/{args.env}/seed_{str(args.seed)}'
 
     # Env
