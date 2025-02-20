@@ -112,7 +112,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("MPC_pre_ep", type=int, nargs='?', default=10000)
     parser.add_argument("decoder_batch", type=int, nargs='?', default=32)
-    parser.add_argument("--use_flow", type=bool, nargs='?', default=False)
+    parser.add_argument("--use_flow", action='store_true', default=False)
     parser.add_argument("--seed", type=int, nargs='?', default=2)
     parser.add_argument("--n_traj", type=int, nargs='?', default=10000) # 1000/10000
     parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.2) # random_ratio=1-expert_ratio
@@ -198,7 +198,7 @@ if __name__ == '__main__':
     flow_model = None
     if args.use_flow:
         from flowpg.core.flow.real_nvp import RealNvp
-        flow_loc = f"normalizing_flow/flow_model/{args.env}/state/flow_seed{str(args.seed)}.pt"
+        flow_loc = f"flowpg/flow_models/{args.env}/flow_seed{str(args.seed)}.pt"
         flow_model = RealNvp.load_module(flow_loc).to(args.device)
         flow_model.disable_grad(True)
 
