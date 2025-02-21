@@ -41,6 +41,8 @@ def data_collect(agent_target, env_target, seed, device):
         if(len(state_list) >= sample_num):
             break
 
+    np.save(f'./data/{args.env}/seed_{str(args.seed)}_state.npy', np.array(state_list))
+
     return th.from_numpy(np.array(state_list)).double().to(device)
 
 
@@ -119,6 +121,7 @@ def main(args, data, dim):
             logger.record("train/epoch", epoch+1)
             flush_logs()
             logger.dump(epoch)
+    os.makedirs(f'./flow_models/{args.env}/', exist_ok=True)
     flow.save_module(f'./flow_models/{args.env}/flow_seed{str(args.seed)}.pt')
 
 
@@ -135,14 +138,14 @@ def seed_everything(seed):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train_sample_count", type=int, nargs='?', default=25000)
-    parser.add_argument("--test_sample_count", type=int, nargs='?', default=25000)
+    parser.add_argument("--train_sample_count", type=int, nargs='?', default=50000)
+    parser.add_argument("--test_sample_count", type=int, nargs='?', default=10000)
     parser.add_argument("--epochs", type=int, nargs='?', default=500)
     parser.add_argument("--eval_freq", type=int, nargs='?', default=1)
     parser.add_argument("--lr", type=float, nargs='?', default=1e-5)
     parser.add_argument("--batch_size", type=int, nargs='?', default=256)
     parser.add_argument("--hidden_size", type=int, nargs='?', default=256)
-    parser.add_argument("--transform_count", type=int, nargs='?', default=6) #num. of flow layers
+    parser.add_argument("--transform_count", type=int, nargs='?', default=10) #num. of flow layers
     parser.add_argument("--mollifier_sigma", type=float, nargs='?', default=0.0001)
     parser.add_argument("--gradient_clip_value", type=float, nargs='?', default=0.1)
     parser.add_argument("--take_log_again", action="store_true")
@@ -163,19 +166,24 @@ if __name__ == "__main__":
         env = gym.make("HalfCheetah-v4", exclude_current_positions_from_observation=False)
         dim = 18
 
-    # parameters
-    hidden_dim = 512
-    action_range = 10.0 if args.env=="reacher" else 1.0
-    action_dim = env.action_space.shape[0]
-    state_dim = env.observation_space.shape[0]
+    os.makedirs(f'./data/{args.env}/', exist_ok=True)
+    data_file = f'./data/{args.env}/seed_{str(args.seed)}_state.npy'
+    if os.path.exists(data_file):
+        data = th.from_numpy(np.load(data_file)).double().to(args.device)
+    else:
+        # parameters
+        hidden_dim = 512
+        action_range = 10.0 if args.env=="reacher" else 1.0
+        action_dim = env.action_space.shape[0]
+        state_dim = env.observation_space.shape[0]
 
-    # load expert policy
-    trained_agent = PolicyNetwork(state_dim, action_dim, hidden_dim, action_range, device).to(device)
-    model_path = f'../models/{args.env}/seed_{str(seed)}/{str(seed)}_{args.env}_source.pth'
-    trained_agent.load_state_dict(th.load( model_path, map_location=device ))
+        # load expert policy
+        trained_agent = PolicyNetwork(state_dim, action_dim, hidden_dim, action_range, device).to(device)
+        model_path = f'../models/{args.env}/seed_{str(seed)}/{str(seed)}_{args.env}_source.pth'
+        trained_agent.load_state_dict(th.load( model_path, map_location=device ))
 
-    # collect data
-    data = data_collect(trained_agent, env, seed, device)
+        # collect data
+        data = data_collect(trained_agent, env, seed, device)
 
     # Train flow forwad using generated samples
     main(args, data, dim)
