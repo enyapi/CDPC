@@ -162,19 +162,23 @@ if __name__ == '__main__':
 
     ##### 3 Collecting target domain data #####
     print("##### Collecting target domain data #####")
-    train_set, buffer = collect_target_data(agent_target, target_env, args.n_traj, args.expert_ratio, args.device, args.seed)
     import pickle
-    # def save_buffer(buffer, filename):
-    #     with open(filename, 'wb') as f:
-    #         pickle.dump(buffer, f)
+    def save_buffer(buffer, filename):
+        with open(filename, 'wb') as f:
+            pickle.dump(buffer, f)
 
-    # def load_buffer(filename):
-    #     with open(filename, 'rb') as f:
-    #         return pickle.load(f)
+    def load_buffer(filename):
+        with open(filename, 'rb') as f:
+            return pickle.load(f)
 
-    # #save_buffer(train_set, '2_cheetah_0.8.pkl')
-    # train_set = load_buffer('2_cheetah_0.8.pkl')
-    # print(train_set.buffer_len())
+    os.makedirs('./train_set/', exist_ok=True)
+    data_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}.pkl'
+    if os.path.exists(data_path):
+        train_set = load_buffer(data_path)
+    else:
+        train_set, buffer = collect_target_data(agent_target, target_env, args.n_traj, args.expert_ratio, args.device, args.seed)
+        save_buffer(train_set, data_path)
+    print(train_set.buffer_len())
 
 
     ##### 4 Train or Loading MPC policy and Dynamic Model #####
@@ -196,11 +200,15 @@ if __name__ == '__main__':
     
     ##### 4.5 Load Flow Model #####
     flow_model = None
+    flow_mean = []
+    flow_std = []
     if args.use_flow:
         from flowpg.core.flow.real_nvp import RealNvp
-        flow_loc = f"flowpg/flow_models/{args.env}/flow_seed{str(args.seed)}.pt"
+        flow_loc = f"./flowpg/flow_models/{args.env}/flow_seed{str(args.seed)}.pt"
         flow_model = RealNvp.load_module(flow_loc).to(args.device)
         flow_model.disable_grad(True)
+        flow_mean = torch.from_numpy(np.load(f'./flowpg/data/{args.env}/seed_{str(args.seed)}_mean.npy')).to(args.device).to(torch.float32)
+        flow_std = torch.from_numpy(np.load(f'./flowpg/data/{args.env}/seed_{str(args.seed)}_std.npy')).to(args.device).to(torch.float32)
 
 
     ##### 5 Training state decoder #####
@@ -221,5 +229,7 @@ if __name__ == '__main__':
         "env": args.env,
         "use_flow": args.use_flow,
         "flow_model": flow_model,
+        "flow_mean": flow_mean,
+        "flow_std": flow_std,
     }
     CDPC(MPC(**params), train_set, mpc_location)

@@ -16,6 +16,14 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from sac_v2 import PolicyNetwork
 
+
+def normalization(data):
+    mean = th.mean(data, axis=0)
+    std = th.std(data, axis=0)
+    data  = (data-mean) / (std+1e-8)
+    return data, mean, std
+    
+
 def data_collect(agent_target, env_target, seed, device):
     state_list = []
     sample_num = 60000
@@ -140,12 +148,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_sample_count", type=int, nargs='?', default=50000)
     parser.add_argument("--test_sample_count", type=int, nargs='?', default=10000)
-    parser.add_argument("--epochs", type=int, nargs='?', default=500)
+    parser.add_argument("--epochs", type=int, nargs='?', default=5000)
     parser.add_argument("--eval_freq", type=int, nargs='?', default=1)
     parser.add_argument("--lr", type=float, nargs='?', default=1e-5)
-    parser.add_argument("--batch_size", type=int, nargs='?', default=256)
+    parser.add_argument("--batch_size", type=int, nargs='?', default=5000)
     parser.add_argument("--hidden_size", type=int, nargs='?', default=256)
-    parser.add_argument("--transform_count", type=int, nargs='?', default=10) #num. of flow layers
+    parser.add_argument("--transform_count", type=int, nargs='?', default=6) #num. of flow layers
     parser.add_argument("--mollifier_sigma", type=float, nargs='?', default=0.0001)
     parser.add_argument("--gradient_clip_value", type=float, nargs='?', default=0.1)
     parser.add_argument("--take_log_again", action="store_true")
@@ -170,6 +178,7 @@ if __name__ == "__main__":
     data_file = f'./data/{args.env}/seed_{str(args.seed)}_state.npy'
     if os.path.exists(data_file):
         data = th.from_numpy(np.load(data_file)).double().to(args.device)
+        data, mean, std = normalization(data)
     else:
         # parameters
         hidden_dim = 512
@@ -184,6 +193,10 @@ if __name__ == "__main__":
 
         # collect data
         data = data_collect(trained_agent, env, seed, device)
+        data, mean, std = normalization(data)
+
+    np.save(f'./data/{args.env}/seed_{str(args.seed)}_mean.npy', mean.cpu().detach().numpy())
+    np.save(f'./data/{args.env}/seed_{str(args.seed)}_std.npy', std.cpu().detach().numpy())
 
     # Train flow forwad using generated samples
     main(args, data, dim)

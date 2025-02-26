@@ -70,7 +70,7 @@ class BidirectionalLSTM(nn.Module):
     
 
 class Decoder_Net(nn.Module):
-    def __init__(self, input_size, output_size, batch_size, device):
+    def __init__(self, input_size, output_size, batch_size, device, use_flow):
         super(Decoder_Net, self).__init__()
         self.batch_size = batch_size
         self.hidden_size = 128
@@ -82,6 +82,7 @@ class Decoder_Net(nn.Module):
         self.random_hidden = ((torch.randn(self.num_layers, self.batch_size, self.hidden_size) * 0.01 + 0.0).to(device), (torch.randn(self.num_layers, batch_size, self.hidden_size)*0.001).to(device))
         self.hidden = self.random_hidden
         self.device = device
+        self.use_flow = use_flow
 
 
     def forward(self, x):
@@ -89,6 +90,9 @@ class Decoder_Net(nn.Module):
         out = self.dropout(out)
         out = self.fc1(out)
         out = self.fc2(out[:, -1, :])
+
+        if self.use_flow:
+            out = F.tanh(out)
         
         return out
 
@@ -131,7 +135,7 @@ class MPC(object):
         self.v_max = [1.0] * self.d                 # the value maximum
 
         # state AE
-        self.decoder_net = Decoder_Net(self.target_state_space_dim, self.source_state_space_dim, self.batch_size, self.device).to(self.device)
+        self.decoder_net = Decoder_Net(self.target_state_space_dim, self.source_state_space_dim, self.batch_size, self.device, self.use_flow).to(self.device)
         self.encoder_net = Encoder_Net(self.source_state_space_dim, self.target_state_space_dim).to(self.device)
         self.dec_optimizer = optim.Adam(self.decoder_net.parameters(), lr=self.lr)
         self.enc_optimizer = optim.Adam(self.encoder_net.parameters(), lr=self.lr)
@@ -215,8 +219,10 @@ class MPC(object):
 
         self.decoder_net.reset_hidden(self.batch_size, flag=True)
         dec_s = self.decoder_net(state[:,0,:].squeeze(1))
-        if self.use_flow: dec_s = self.flow_model.g(dec_s.to(torch.float64))[0]
-
+        if self.use_flow: 
+            dec_s = self.flow_model.g(dec_s.to(torch.float64))[0].to(torch.float32)
+            dec_s = dec_s * self.flow_std + self.flow_mean
+            
         loss_tran = 0
         loss_rec = 0
         R_s_tensor = torch.zeros((self.batch_size, 1)).to(self.device)
@@ -237,7 +243,9 @@ class MPC(object):
                 R_s_tensor[b] += (0.99**i)*r
 
             dec_s1 = self.decoder_net(next_state[:,i,:].squeeze(1))
-            if self.use_flow: dec_s1 = self.flow_model.g(dec_s1.to(torch.float64))[0]
+            if self.use_flow: 
+                dec_s1 = self.flow_model.g(dec_s1.to(torch.float64))[0].to(torch.float32)
+                dec_s1 = dec_s1 * self.flow_std + self.flow_mean
             loss_tran += loss_function(tran_s1, dec_s1)
 
             rec_s = self.encoder_net(dec_s)  ###
@@ -293,8 +301,10 @@ class MPC(object):
 
             self.decoder_net.reset_hidden(self.N)
             states = self.decoder_net(s[:, 0, :])
-            if self.use_flow: states = self.flow_model.g(states.to(torch.float64))[0]
-            
+            if self.use_flow: 
+                states = self.flow_model.g(states.to(torch.float64))[0].to(torch.float32)
+                states = states * self.flow_std + self.flow_mean
+
             rewards = np.zeros(self.N)
             for j in range(self.h):
                 for i, env in enumerate(vec_env.envs):
@@ -317,7 +327,9 @@ class MPC(object):
                     ])
 
                 next_states = self.decoder_net(s[:, j+1, :])
-                if self.use_flow: next_states = self.flow_model.g(next_states.to(torch.float64))[0]
+                if self.use_flow: 
+                    next_states = self.flow_model.g(next_states.to(torch.float64))[0].to(torch.float32)
+                    next_states = next_states * self.flow_std + self.flow_mean
                 rewards += r
                 states = next_states
 
