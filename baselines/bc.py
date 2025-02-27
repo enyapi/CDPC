@@ -2,7 +2,6 @@ import numpy as np
 import torch
 from imitation.algorithms import bc
 from imitation.data import types
-from stable_baselines3.common.evaluation import evaluate_policy
 import wandb
 import random
 import argparse
@@ -57,6 +56,8 @@ def collect_target_data(agent_target, env_target, seed, n_traj, expert_ratio, bc
         selected_dones.extend(all_trajectories[idx]["dones"])
     
     print(f"Selected {len(selected_obs)} transitions from top {top_n} trajectories.")
+    for i in range(top_n):
+        print(scores[top_indices[i]])
 
     # List to NumPy
     obs_array = np.array(selected_obs, dtype=np.float32)
@@ -81,6 +82,16 @@ def collect_target_data(agent_target, env_target, seed, n_traj, expert_ratio, bc
     )
 
     return transitions
+
+
+def evaluate_policy(policy, env, seed):
+    total_reward = 0.0
+    state, _ = env.reset(seed=seed)
+    for i in range(env.spec.max_episode_steps):
+        action, _ = policy.predict(state)
+        state, reward, terminated, truncated, _ = env.step(action)
+        total_reward += reward
+    return total_reward
     
 
 def seed_everything(seed):
@@ -98,7 +109,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, nargs='?', default=2)
     parser.add_argument("--n_traj", type=int, nargs='?', default=10000) # 1000/10000
-    parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.8) # random_ratio=1-expert_ratio
+    parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.2) # random_ratio=1-expert_ratio
     parser.add_argument("--ep", type=int, nargs='?', default=500) # the same as cdpc
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
     parser.add_argument("--env", type=str, nargs='?', default="cheetah")
@@ -111,7 +122,7 @@ if __name__ == '__main__':
     # Create a random number generator
     rng = np.random.default_rng(args.seed)
 
-    wandb.init(project="cdpc", name = f'baseline: BC_{args.bc_ratio} {str(args.seed)}_{args.env}')
+    wandb.init(project="cdpc", name = f'baseline: BC_{args.bc_ratio} {str(args.seed)}_{args.env}', tags = ["baseline", "BC"])
     location = f'./baselines/bc/{args.env}/seed_{str(args.seed)}'
 
     # Env
@@ -119,6 +130,7 @@ if __name__ == '__main__':
         env = gym.make("Reacher-3joints")
     elif args.env == "cheetah":
         env = gym.make("HalfCheetah-3legs")
+    env = gym.make("Reacher-v4")
 
     # parameters
     batch_size = 32*2 * env.spec.max_episode_steps
@@ -129,7 +141,7 @@ if __name__ == '__main__':
 
     # load expert policy
     trained_agent = PolicyNetwork(state_dim, action_dim, hidden_dim, action_range, device).to(device)
-    model_path = f'models/{args.env}/seed_{str(args.seed)}/{str(args.seed)}_{args.env}_target.pth'
+    model_path = f'models/{args.env}/seed_{str(args.seed)}/{str(args.seed)}_{args.env}_source.pth'
     trained_agent.load_state_dict(torch.load( model_path, map_location=device ))
 
     # Create the Transitions object
@@ -144,19 +156,19 @@ if __name__ == '__main__':
         rng=rng,
         batch_size=batch_size,
         device=device,
+        optimizer_kwargs={'lr': 0.01},
     )
 
-    os.makedirs(location, exist_ok=True)
-    if not os.path.exists(f'{location}/{str(args.seed)}_{args.env}_bc_{args.bc_ratio}.pth'):
-        # Train BC policy and evaluate after each epoch
-        mean_reward, std_reward = evaluate_policy(bc_trainer.policy, env, n_eval_episodes=10)
-        wandb.log({"episode": 0, "test/score": mean_reward})
-        print(f"BC Policy (Epoch {0}): mean_reward={mean_reward:.2f} +/- {std_reward:.2f}")
-        for epoch in range(args.ep):
-            bc_trainer.train(n_batches=1)
-            mean_reward, std_reward = evaluate_policy(bc_trainer.policy, env, n_eval_episodes=10)
-            wandb.log({"episode": epoch+1, "test/score": mean_reward})
-            print(f"BC Policy (Epoch {epoch+1}): mean_reward={mean_reward:.2f} +/- {std_reward:.2f}")
+    # Train BC policy and evaluate after each epoch
+    reward = evaluate_policy(bc_trainer.policy, env, args.seed)
+    wandb.log({"episode": 0, "test/score": reward})
+    print(f"BC Policy (Epoch {0}): reward={reward:.2f}")
+    for epoch in range(args.ep):
+        bc_trainer.train(n_batches=1) #n_epochs=1
+        reward = evaluate_policy(bc_trainer.policy, env, args.seed)
+        wandb.log({"episode": epoch+1, "test/score": reward})
+        print(f"BC Policy (Epoch {epoch+1}): reward={reward:.2f}")
 
-        # Save the trained BC policy
-        bc_trainer.policy.save(f'{location}/{str(args.seed)}_{args.env}_bc_{args.bc_ratio}.pth')
+    # Save the trained BC policy
+    os.makedirs(location, exist_ok=True)
+    bc_trainer.policy.save(f'{location}/{str(args.seed)}_{args.env}_bc_{args.bc_ratio}.pth')
