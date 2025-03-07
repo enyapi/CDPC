@@ -92,6 +92,10 @@ def evaluate_policy(policy, env, seed):
         state, reward, terminated, truncated, _ = env.step(action)
         total_reward += reward
     return total_reward
+
+def validation(policy, env, seed):
+    loss = 0
+    return loss
     
 
 def seed_everything(seed):
@@ -114,6 +118,7 @@ if __name__ == '__main__':
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
     parser.add_argument("--env", type=str, nargs='?', default="cheetah")
     parser.add_argument("--bc_ratio", type=float, nargs='?', default=0.1) # BC_0.1
+    parser.add_argument("--wandb", action='store_true', default=False)
     
     args = parser.parse_args()
     seed_everything(args.seed)
@@ -121,8 +126,8 @@ if __name__ == '__main__':
 
     # Create a random number generator
     rng = np.random.default_rng(args.seed)
-
-    wandb.init(project="cdpc", name = f'baseline: BC_{args.bc_ratio} {str(args.seed)}_{args.env}', tags = ["baseline", "BC"])
+    if args.wandb:
+        wandb.init(project="cdpc", name = f'baseline: BC_{args.bc_ratio} {str(args.seed)}_{args.env}', tags = ["baseline", "BC"])
     location = f'./baselines/bc/{args.env}/seed_{str(args.seed)}'
 
     # Env
@@ -161,12 +166,14 @@ if __name__ == '__main__':
 
     # Train BC policy and evaluate after each epoch
     reward = evaluate_policy(bc_trainer.policy, env, args.seed)
-    wandb.log({"episode": 0, "test/score": reward})
+    if args.wandb:
+        wandb.log({"episode": 0, "test/score": reward})
     print(f"BC Policy (Epoch {0}): reward={reward:.2f}")
     for epoch in range(args.ep):
-        bc_trainer.train(n_batches=1) #n_epochs=1
+        loss = bc_trainer.train(n_batches=1) #n_epochs=1
         reward = evaluate_policy(bc_trainer.policy, env, args.seed)
-        wandb.log({"episode": epoch+1, "test/score": reward})
+        if args.wandb:
+            wandb.log({"episode": epoch+1, "test/score": reward, "train/loss": loss})
         print(f"BC Policy (Epoch {epoch+1}): reward={reward:.2f}")
 
     # Save the trained BC policy
