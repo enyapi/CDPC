@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 import random
 import torch.nn as nn
 import collections
@@ -32,11 +33,13 @@ class ReplayBuffer():
             next_state_list.append(n_s)
             done_list.append(d)
 
-        return torch.FloatTensor(state_list).to(self.device), \
-               torch.FloatTensor(action_list).to(self.device), \
-               torch.FloatTensor(reward_list).unsqueeze(-1).to(self.device), \
-               torch.FloatTensor(next_state_list).to(self.device), \
-               torch.FloatTensor(done_list).unsqueeze(-1).to(self.device)
+        return (
+            torch.tensor(np.array(state_list), dtype=torch.float32).to(self.device),
+            torch.tensor(np.array(action_list), dtype=torch.float32).to(self.device),
+            torch.tensor(np.array(reward_list), dtype=torch.float32).unsqueeze(-1).to(self.device),
+            torch.tensor(np.array(next_state_list), dtype=torch.float32).to(self.device),
+            torch.tensor(np.array(done_list), dtype=torch.float32).unsqueeze(-1).to(self.device),
+        )
 
     def buffer_len(self):
         return len(self.buffer)
