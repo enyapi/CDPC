@@ -55,11 +55,12 @@ def collect_target_data(agent_target, target_env, n_traj, expert_ratio, device, 
     return train_set, buffer
 
 
-def CDPC(mpc, train_set, mpc_location):
+def CDPC(mpc, train_set, mpc_location, Is_wandb):
     Return_val = []
     # val state decoder
     total_reward = mpc.evaluate() 
-    wandb.log({"cdpc episode": 0, "valid/reward": total_reward, })
+    if Is_wandb:
+        wandb.log({"cdpc episode": 0, "valid/reward": total_reward, })
 
     Return_val.append(total_reward)
     print(f'episode: {0}, validation reward: {total_reward}')
@@ -73,7 +74,7 @@ def CDPC(mpc, train_set, mpc_location):
             loss_tran_list.append(loss_tran)
             loss_pref_list.append(loss_pref)
             loss_rec_list.append(loss_rec)
-        print(f'episode: {j}, transition loss: {np.mean(loss_tran_list)}, pref loss: {np.mean(loss_pref_list)}, rec loss: {np.mean(loss_rec_list)}')
+        print(f'episode: {j}, transition loss: {np.mean(loss_tran_list)}, pref loss: {np.mean(loss_pref_list)}, rec loss: {np.mean(loss_rec_list)}, pref acc: {pref_acc}')
 
         # val state decoder
         eval_freq = 1
@@ -82,13 +83,14 @@ def CDPC(mpc, train_set, mpc_location):
             print(f'episode: {j}, avg. validation reward: {total_reward}')
 
         Return_val.append(total_reward)
-        wandb.log({"cdpc episode": j,
-                "valid/reward": total_reward, 
-                "train/tran loss": np.mean(loss_tran_list),
-                "train/pref loss": np.mean(loss_pref_list),
-                "train/rec loss": np.mean(loss_rec_list),
-                "train/pref acc": pref_acc,
-                })
+        if Is_wandb:
+            wandb.log({"cdpc episode": j,
+                    "valid/reward": total_reward, 
+                    "train/tran loss": np.mean(loss_tran_list),
+                    "train/pref loss": np.mean(loss_pref_list),
+                    "train/rec loss": np.mean(loss_rec_list),
+                    "train/pref acc": pref_acc,
+                    })
         torch.save(mpc.decoder_net.state_dict(), f'{mpc_location}/{str(mpc.seed)}_decoder.pth')
         # if not os.path.exists('./data/'): os.makedirs('./data/')
         # filename = './data/'+str(args.seed)+'_0.8_0.2.npz'
@@ -112,18 +114,19 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("MPC_pre_ep", type=int, nargs='?', default=10000)
     parser.add_argument("decoder_batch", type=int, nargs='?', default=32)
-    parser.add_argument("--use_flow", action='store_true', default=False)
     parser.add_argument("--seed", type=int, nargs='?', default=2)
     parser.add_argument("--n_traj", type=int, nargs='?', default=10000) # 1000/10000
     parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.2) # random_ratio=1-expert_ratio
     parser.add_argument("--decoder_ep", type=int, nargs='?', default=500) # 500/200
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
     parser.add_argument("--env", type=str, nargs='?', default="cheetah") # cheetah reacher
+    parser.add_argument("--wandb", action='store_true', default=False)
+    parser.add_argument("--use_flow", action='store_true', default=False)
     
     args = parser.parse_args()
     seed_everything(args.seed)
-
-    wandb.init(project="cdpc", name = f'cdpc {str(args.seed)}_{args.env} {str(args.expert_ratio)}_expert')
+    if args.wandb:
+        wandb.init(project="cdpc", name = f'cdpc {str(args.seed)}_{args.env} {str(args.expert_ratio)}_expert')
     location = f'./models/{args.env}/seed_{str(args.seed)}/'
     mpc_location = f'{location}/expert_ratio_{args.expert_ratio}/'
 
@@ -193,7 +196,8 @@ if __name__ == '__main__':
         batch_size = 128
         for i in range(args.MPC_pre_ep):
             loss_mpc, loss_dm = mpc_dm.update(batch_size, buffer)
-            wandb.log({"mpc_dm episode": i, "train/loss_mpc": loss_mpc, "train/loss_dm": loss_dm,})
+            if args.wandb:
+                wandb.log({"mpc_dm episode": i, "train/loss_mpc": loss_mpc, "train/loss_dm": loss_dm,})
         torch.save(mpc_dm.mpc_policy_net.state_dict(), f'{mpc_location}/{str(args.seed)}_MPCModel.pth')
         torch.save(mpc_dm.dynamic_model.state_dict(), f'{mpc_location}/{str(args.seed)}_DynamicModel.pth')
 
@@ -232,4 +236,4 @@ if __name__ == '__main__':
         "flow_mean": flow_mean,
         "flow_std": flow_std,
     }
-    CDPC(MPC(**params), train_set, mpc_location)
+    CDPC(MPC(**params), train_set, mpc_location, args.wandb)

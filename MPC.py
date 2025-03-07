@@ -183,10 +183,9 @@ class MPC(object):
         
         ## preference consistency loss
         result_tensor = torch.cat((R_s_a_tensor, R_s_b_tensor), dim=-1).type(torch.float32)#.unsqueeze(0)
-        sub_first_rewards = result_tensor-result_tensor[:,0][:,None]
-        sub_first_rewards = torch.clamp(sub_first_rewards, min=-50, max=50)
-        loss_pref = torch.sum(sub_first_rewards.exp(), -1).log().mean()
-        pref_acc = (sub_first_rewards[:,1] < 0).sum().item() / self.batch_size
+        sub_first_rewards = result_tensor - result_tensor[:, 0][:, None]
+        loss_pref = torch.logsumexp(sub_first_rewards, dim=-1).mean()
+        pref_acc = (sub_first_rewards[:, 1] < 0).sum().item() / self.batch_size
         
         dec_loss = loss_pref # no loss_tran + loss_rec
         #enc_loss = loss_rec
