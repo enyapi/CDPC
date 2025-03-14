@@ -135,10 +135,9 @@ if __name__ == '__main__':
         env = gym.make("Reacher-3joints")
     elif args.env == "cheetah":
         env = gym.make("HalfCheetah-3legs")
-    env = gym.make("Reacher-v4")
 
     # parameters
-    batch_size = 32*2 * env.spec.max_episode_steps
+    batch_size = 32#*2 * env.spec.max_episode_steps
     hidden_dim = 512
     action_range = 10.0 if args.env=="reacher" else 1.0
     action_dim = env.action_space.shape[0]
@@ -146,7 +145,7 @@ if __name__ == '__main__':
 
     # load expert policy
     trained_agent = PolicyNetwork(state_dim, action_dim, hidden_dim, action_range, device).to(device)
-    model_path = f'models/{args.env}/seed_{str(args.seed)}/{str(args.seed)}_{args.env}_source.pth'
+    model_path = f'models/{args.env}/seed_{str(args.seed)}/{str(args.seed)}_{args.env}_target.pth'
     trained_agent.load_state_dict(torch.load( model_path, map_location=device ))
 
     # Create the Transitions object
@@ -161,7 +160,7 @@ if __name__ == '__main__':
         rng=rng,
         batch_size=batch_size,
         device=device,
-        optimizer_kwargs={'lr': 0.01},
+        optimizer_kwargs={'lr': 0.001},
     )
 
     # Train BC policy and evaluate after each epoch

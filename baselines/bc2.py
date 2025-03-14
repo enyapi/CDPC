@@ -93,22 +93,22 @@ if __name__ == '__main__':
     parser.add_argument("--env", type=str, nargs='?', default="cheetah")
     parser.add_argument("--bc_ratio", type=float, nargs='?', default=0.1) # BC_0.1
     parser.add_argument("--wandb", action='store_true', default=False)
+    parser.add_argument("--vedio", action='store_true', default=False)
     
     args = parser.parse_args()
     seed_everything(args.seed)
     device = args.device
 
     ## Create a random number generator
-    rng = np.random.default_rng(args.seed)
     if args.wandb:
         wandb.init(project="cdpc", name = f'baseline: BC2_{args.bc_ratio} {str(args.seed)}_{args.env}', tags = ["baseline", "BC2"])
     location = f'./baselines/bc2/{args.env}/seed_{str(args.seed)}'
 
     ## Env
     if args.env == "reacher":
-        env = gym.make("Reacher-3joints")
+        env = gym.make("Reacher-3joints", render_mode="rgb_array")
     elif args.env == "cheetah":
-        env = gym.make("HalfCheetah-3legs")
+        env = gym.make("HalfCheetah-3legs", render_mode="rgb_array")
 
     ## parameters
     batch_size = 128#32*2 * env.spec.max_episode_steps
@@ -134,7 +134,7 @@ if __name__ == '__main__':
         with open(filename, "rb") as f:
             replay_buffer.buffer = collections.deque(pickle.load(f), maxlen=replay_buffer.buffer.maxlen)
 
-    from MPC_DM_model import MPC_DM, ReplayBuffer
+    from MPC_DM_model import ReplayBuffer, MPC_Policy_Net
     replay_buffer = ReplayBuffer(1000000, device)
     val_buffer = ReplayBuffer(1000000, device)
     n_traj = args.n_traj
@@ -156,25 +156,37 @@ if __name__ == '__main__':
 
 
     ## train BC
+    import torch.nn.functional as F
+    import torch.optim as optim
+
     states, actions = val_data(val_buffer)
     print(states.shape)   # (N, state_size)
     print(actions.shape)  # (N, action_size)
 
-    mpc_dm = MPC_DM(state_dim, action_dim, args.device)
-    reward = evaluate_policy(mpc_dm.mpc_policy_net, env, args.seed, args.device)
-    val_loss = validation(mpc_dm.mpc_policy_net, states, actions)
+    policy = MPC_Policy_Net(state_dim, action_dim).to(device)
+    optimizer = optim.Adam(policy.parameters(), lr=1e-3, weight_decay=1e-4)
+
+    reward = evaluate_policy(policy, env, args.seed, args.device)
+    val_loss = validation(policy, states, actions)
     if args.wandb:
         wandb.log({"episode": 0, "test/score": reward, "test/loss": val_loss.item()})
     print(f"BC Policy (Epoch {0}): mean_reward={reward:.2f}")
 
     for i in range(args.ep):
-        loss_mpc, loss_dm = mpc_dm.update(batch_size, replay_buffer)
+        ## update
+        state, action, reward, next_state, done = replay_buffer.sample(batch_size)
+        pred_action = policy(state)
+        loss_mpc = F.mse_loss(pred_action, action)
+        optimizer.zero_grad()
+        loss_mpc.backward()
+        optimizer.step()
 
-        reward = evaluate_policy(mpc_dm.mpc_policy_net, env, args.seed, args.device)
-        val_loss = validation(mpc_dm.mpc_policy_net, states, actions)
+        if i%100==0 and args.vedio: env = gym.wrappers.RecordVideo(env, f'video/bc2')
+        reward = evaluate_policy(policy, env, args.seed, args.device)
+        val_loss = validation(policy, states, actions)
         if args.wandb:
             wandb.log({"episode": i+1, "test/score": reward, "train/loss": loss_mpc.item(), "test/loss": val_loss.item()})
         print(f"BC Policy (Epoch {i+1}): mean_reward={reward:.2f}, train_loss={loss_mpc.item():.2f}, val_loss={val_loss.item():.2f}")
 
-    torch.save(mpc_dm.mpc_policy_net.state_dict(), f'{location}/{str(args.seed)}_{args.env}_bc2_{args.bc_ratio}.pth')
+    torch.save(policy.state_dict(), f'{location}/{str(args.seed)}_{args.env}_bc2_{args.bc_ratio}.pth')
 
