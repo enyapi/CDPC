@@ -201,6 +201,7 @@ class SAC():
             self.test_env = gym.make("Reacher-v4") if args.domain == "source" else gym.make("Reacher-3joints")
         elif args.env == "cheetah":
             self.test_env = gym.make("HalfCheetah-v4", exclude_current_positions_from_observation=False) if args.domain == "source" else gym.make("HalfCheetah-3legs")
+            
         self.args = args
         self.device = device
 
@@ -322,8 +323,8 @@ if __name__ == '__main__':
     seed_everything(args.seed)
     device = args.device
     
-    os.environ["WANDB_DIR"] = "/media/HDD1"
-    wandb.init(project="cdpc", name = f'{args.env} {str(args.seed)}: {args.domain} policy')
+    #os.environ["WANDB_DIR"] = "/media/HDD1"
+    wandb.init(project="cdpc", name = f'{args.env} {str(args.seed)}: {args.domain} policy', tags=["policy"])
 
     ##### Loading source domain policy #####
     print("##### training source domain policy #####")
