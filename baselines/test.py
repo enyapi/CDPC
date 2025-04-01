@@ -47,40 +47,6 @@ class MPC_Policy_Net(nn.Module):
 
         return x
     
-class ReplayBuffer():
-    def __init__(self, buffer_maxlen, device):
-        self.buffer = collections.deque(maxlen=buffer_maxlen)
-        self.device = device
-
-    def push(self, data):
-        self.buffer.append(data)
-
-    def sample(self, batch_size):
-        state_list = []
-        action_list = []
-        reward_list = []
-        next_state_list = []
-        done_list = []
-
-        batch = random.sample(self.buffer, batch_size)
-        for experience in batch:
-            s, a, r, n_s, d = experience
-            # state, action, reward, next_state, done
-
-            state_list.append(s)
-            action_list.append(a)
-            reward_list.append(r)
-            next_state_list.append(n_s)
-            done_list.append(d)
-
-        return (
-            torch.tensor(np.array(state_list), dtype=torch.float32).to(self.device),
-            torch.tensor(np.array(action_list), dtype=torch.float32).to(self.device),
-            torch.tensor(np.array(reward_list), dtype=torch.float32).unsqueeze(-1).to(self.device),
-            torch.tensor(np.array(next_state_list), dtype=torch.float32).to(self.device),
-            torch.tensor(np.array(done_list), dtype=torch.float32).unsqueeze(-1).to(self.device),
-        )
-
 # class ReplayBuffer():
 #     def __init__(self, buffer_maxlen, device):
 #         self.buffer = collections.deque(maxlen=buffer_maxlen)
@@ -90,17 +56,51 @@ class ReplayBuffer():
 #         self.buffer.append(data)
 
 #     def sample(self, batch_size):
-#         batch = random.sample(self.buffer, batch_size)
+#         state_list = []
+#         action_list = []
+#         reward_list = []
+#         next_state_list = []
+#         done_list = []
 
-#         state_list, action_list, reward_list, next_state_list, done_list = zip(*batch)
+#         batch = random.sample(self.buffer, batch_size)
+#         for experience in batch:
+#             s, a, r, n_s, d = experience
+#             # state, action, reward, next_state, done
+
+#             state_list.append(s)
+#             action_list.append(a)
+#             reward_list.append(r)
+#             next_state_list.append(n_s)
+#             done_list.append(d)
 
 #         return (
-#             torch.stack(state_list).to(self.device),
-#             torch.stack(action_list).to(self.device),
-#             torch.tensor(reward_list, dtype=torch.float32, device=self.device).unsqueeze(-1),
-#             torch.stack(next_state_list).to(self.device),
-#             torch.tensor(done_list, dtype=torch.float32, device=self.device).unsqueeze(-1),
+#             torch.tensor(np.array(state_list), dtype=torch.float32).to(self.device),
+#             torch.tensor(np.array(action_list), dtype=torch.float32).to(self.device),
+#             torch.tensor(np.array(reward_list), dtype=torch.float32).unsqueeze(-1).to(self.device),
+#             torch.tensor(np.array(next_state_list), dtype=torch.float32).to(self.device),
+#             torch.tensor(np.array(done_list), dtype=torch.float32).unsqueeze(-1).to(self.device),
 #         )
+
+class ReplayBuffer():
+    def __init__(self, buffer_maxlen, device):
+        self.buffer = collections.deque(maxlen=buffer_maxlen)
+        self.device = device
+
+    def push(self, data):
+        self.buffer.append(data)
+
+    def sample(self, batch_size):
+        batch = random.sample(self.buffer, batch_size)
+
+        state_list, action_list, reward_list, next_state_list, done_list = zip(*batch)
+
+        return (
+            torch.stack(state_list).to(self.device),
+            torch.stack(action_list).to(self.device),
+            torch.tensor(reward_list, dtype=torch.float32, device=self.device).unsqueeze(-1),
+            torch.stack(next_state_list).to(self.device),
+            torch.tensor(done_list, dtype=torch.float32, device=self.device).unsqueeze(-1),
+        )
 
 def collect_target_data(agent_target, env_target, n_traj, device, seed):
     buffer_maxlen = 1000000
@@ -164,7 +164,13 @@ def store_data_from_file(buffer, file_path):
         action = data['actions'][i]
         reward = 0
         next_state = data['next_obs'][i]
-        done = data['done'][i]
+        done = 0 #data['done'][i]
+
+        # state = torch.tensor(np.array(state), dtype=torch.float32)
+        # action = torch.tensor(np.array(action), dtype=torch.float32)
+        # reward = torch.tensor(np.array(reward), dtype=torch.float32)
+        # next_state = torch.tensor(np.array(next_state), dtype=torch.float32)
+        # done = torch.tensor(np.array(done), dtype=torch.float32)
         
         buffer.push((state, action, reward, next_state, done)) 
 
@@ -185,10 +191,10 @@ if __name__ == '__main__':
     seed_everything(seed)
 
     if args.wandb:
-        wandb.init(project="cdpc", name = f'baseline: SAC policy 5000')
+        wandb.init(project="cdpc", name = f'baseline: d4rl dataset')
 
     env = gym.make("HalfCheetah-3legs", render_mode="rgb_array")
-    env = gym.make("HalfCheetah-v4")#, exclude_current_positions_from_observation=False)
+    env = gym.make("HalfCheetah-v2")#, exclude_current_positions_from_observation=False)
 
     ## parameters
     batch_size = args.b
@@ -197,19 +203,19 @@ if __name__ == '__main__':
     action_dim = env.action_space.shape[0]
     state_dim = env.observation_space.shape[0]
 
-    ## load expert policy
-    trained_agent = PolicyNetwork(state_dim, action_dim, hidden_dim, action_range, device).to(device)
-    model_path = f'models/cheetah/seed_{str(args.seed)}/{str(args.seed)}_cheetah_target.pth'
-    model_path = f'models/cheetah/seed_{str(args.seed)}/{str(args.seed)}_cheetah_source0.pth'
-    trained_agent.load_state_dict(torch.load( model_path, map_location=device ))
+    # ## load expert policy
+    # trained_agent = PolicyNetwork(state_dim, action_dim, hidden_dim, action_range, device).to(device)
+    # model_path = f'models/cheetah/seed_{str(args.seed)}/{str(args.seed)}_cheetah_target.pth'
+    # model_path = f'models/cheetah/seed_{str(args.seed)}/{str(args.seed)}_cheetah_source0.pth'
+    # trained_agent.load_state_dict(torch.load( model_path, map_location=device ))
 
-    ## Create the Transitions object
-    buffer = collect_target_data(trained_agent, env, 5, device, seed)
+    # ## Create the Transitions object
+    # buffer = collect_target_data(trained_agent, env, 5, device, seed)
 
-    # buffer = ReplayBuffer(buffer_maxlen=100000, device=device)
-    # store_data_from_file(buffer, "./halfcheetah.pt")
-    # # buffer.buffer = torch.load("./buffer.dq", map_location="cpu")
-    # print(f"Replay buffer size: {len(buffer.buffer)}")
+    buffer = ReplayBuffer(buffer_maxlen=100000, device=device)
+    #store_data_from_file(buffer, f"./traj_data/{str(seed)}_HalfCheetah-3legs_PPO.pt")
+    store_data_from_file(buffer, f"./traj_data/d4rl.pt")
+    print(f"Replay buffer size: {len(buffer.buffer)}")
 
     ## train BC
     policy = MPC_Policy_Net(state_dim, action_dim).to(device)
