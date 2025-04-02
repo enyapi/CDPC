@@ -19,7 +19,7 @@ python -m experiments.train_flow_forward --seed=2 --device='cuda' --env="reacher
 
 3. CDPC
 ```
-python main.py --seed=7 --n_traj=10000 --expert_ratio=0.2 --decoder_ep=500 --device="cuda" --env="reacher" --use_flow=False
+python main.py --seed=7 --n_traj=10000 --expert_ratio=0.2 --decoder_ep=500 --device="cuda" --env="reacher"
 ```
 
 ## Baselines implementation
