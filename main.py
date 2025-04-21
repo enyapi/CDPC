@@ -67,6 +67,7 @@ if __name__ == '__main__':
     parser.add_argument("--decoder_ep", type=int, nargs='?', default=500) # 500/200
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
     parser.add_argument("--env", type=str, nargs='?', default="cheetah") # cheetah reacher
+    parser.add_argument("--lr", type=float, nargs='?', default=1e-3) # cheetah reacher
     parser.add_argument("--wandb", action='store_true', default=False)
     parser.add_argument("--use_flow", action='store_true', default=False)
     
@@ -141,7 +142,7 @@ if __name__ == '__main__':
     print("##### Training state decoder #####")
     params = {
         'batch_size': args.decoder_batch,
-        'lr': 0.001,  
+        'lr': args.lr,  
         'source_env': source_env,
         'target_env': target_env,
         'source_state_space_dim': source_s_dim,

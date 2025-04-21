@@ -2,7 +2,6 @@ import torch
 import numpy as np
 import random
 import torch.nn as nn
-import collections
 import torch.nn.functional as F
 import torch.optim as optim
 import argparse
@@ -10,7 +9,7 @@ import os
 import pickle
 import gymnasium as gym
 import wandb
-from utils import seed_everything, ReplayBuffer, get_top_k_trajs, d4rl2Transition
+from utils import seed_everything, ReplayBuffer, get_top_k_trajs, d4rl2Transition, load_buffer
 
 
 class MPC_Policy_Net(nn.Module):
@@ -96,8 +95,8 @@ class MPC_DM:
     
     def evaluate_policy(self, env, seed):
         total_reward = 0.0
-        state, _ = env.reset(seed=seed)
         for _ in range(10):
+            state, _ = env.reset(seed=seed)
             for i in range(env.spec.max_episode_steps):
                 state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device)
                 action = self.mpc_policy_net(state).cpu().detach().numpy().squeeze(0)

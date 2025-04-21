@@ -126,8 +126,13 @@ class MPC(object):
     def learn(self, train_set):
         # organize dateset
         index = list(range(train_set.buffer_len()))
-        combinations_list = list(combinations(index, 2))
-        selected_combinations = random.sample(combinations_list, self.batch_size)
+        selected_combinations = []
+        seen = set()
+        while len(selected_combinations) < self.batch_size:
+            pair = tuple(sorted(random.sample(index, 2)))
+            if pair not in seen:
+                seen.add(pair)
+                selected_combinations.append(pair)
         state_a, next_state_a, state_b, next_state_b = [], [], [], []
         for combo in selected_combinations:
             traj_a, traj_b = train_set.sample(combo)
@@ -166,7 +171,7 @@ class MPC(object):
         loss_pref = torch.logsumexp(sub_first_rewards, dim=-1).mean()
         pref_acc = (sub_first_rewards[:, 1] < 0).sum().item() / self.batch_size
         
-        dec_loss = loss_pref# + loss_tran + loss_rec # no 
+        dec_loss = loss_pref# + 0.1*loss_tran + 0.3*loss_rec # no 
         #enc_loss = loss_rec
 
         self.dec_optimizer.zero_grad()
@@ -206,10 +211,13 @@ class MPC(object):
         loss_rec = 0
         R_s_tensor = torch.zeros((self.batch_size, 1)).to(self.device)
 
+        import time
+        start1 = time.perf_counter()
+
         for i in range(state[0,:,0].shape[0]): # trajectory length
             for n, env in enumerate(vec_env.envs):
                 env.reset_specific(state=dec_s[n].cpu().detach().numpy())
-            
+
             actions = self.agent.get_action(dec_s.cpu(), deterministic=True)
             tran_s1, r, _, _ = vec_env.step(actions)
             tran_s1 = torch.tensor(tran_s1, dtype=torch.float32).to(self.device)
@@ -252,7 +260,7 @@ class MPC(object):
         
         traj_state[:, 0, :] = state 
         
-        noise = torch.randn((self.N, *action.shape), dtype=torch.float32, device=self.device) * 0.1
+        noise = torch.randn((self.N, *action.shape), dtype=torch.float32, device=self.device) * 0.01
         action_noisy = action + noise
         action_noisy[0] = action
         traj_action[:, 0, :] = action_noisy
@@ -334,8 +342,7 @@ class MPC(object):
 
             s1, r1, terminated, truncated, _ = env_target.step(a0_target.cpu().detach().numpy())
             # print(i)
-            # print(s1)
-            # print(a0_target)
+            # print(best_reward)
             # print(r1)
             # print()
             done = truncated or terminated
@@ -344,8 +351,4 @@ class MPC(object):
             s0 = s1
             
             if done: break
-        # print(i)
-        # print("best reward:", best_rewards)
-        # print("total reward:", total_reward)
-        # print()
         return total_reward
