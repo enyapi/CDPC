@@ -4,6 +4,7 @@ import numpy as np
 import os
 import torch
 import collections
+import gymnasium as gym
 
 def seed_everything(seed):
     random.seed(seed)
