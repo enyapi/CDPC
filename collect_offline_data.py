@@ -52,5 +52,5 @@ if __name__ == '__main__':
     
     # Save data
     os.makedirs('./train_set/', exist_ok=True)
-    save_buffer(data_path)
+    save_buffer(data, data_path)
     print(f"Saved {len(data['observations'])} transitions to {data_path}")

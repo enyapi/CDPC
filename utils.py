@@ -231,6 +231,6 @@ def load_buffer(data_path):
     with open(data_path, 'rb') as f:
         return pickle.load(f)
 
-def save_buffer(data_path):
+def save_buffer(data, data_path):
     with open(data_path, 'wb') as f:
         pickle.dump(data, f)
