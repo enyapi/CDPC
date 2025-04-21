@@ -5,44 +5,13 @@ import torch.nn as nn
 import collections
 import torch.nn.functional as F
 import torch.optim as optim
+import argparse
+import os
+import pickle
+import gymnasium as gym
+import wandb
+from utils import seed_everything, ReplayBuffer, get_top_k_trajs, d4rl2Transition
 
-
-class ReplayBuffer():
-    def __init__(self, buffer_maxlen, device):
-        self.buffer = collections.deque(maxlen=buffer_maxlen)
-        self.device = device
-
-    def push(self, data):
-        self.buffer.append(data)
-
-    def sample(self, batch_size):
-        state_list = []
-        action_list = []
-        reward_list = []
-        next_state_list = []
-        done_list = []
-
-        batch = random.sample(self.buffer, batch_size)
-        for experience in batch:
-            s, a, r, n_s, d = experience
-            # state, action, reward, next_state, done
-
-            state_list.append(s)
-            action_list.append(a)
-            reward_list.append(r)
-            next_state_list.append(n_s)
-            done_list.append(d)
-
-        return (
-            torch.tensor(np.array(state_list), dtype=torch.float32).to(self.device),
-            torch.tensor(np.array(action_list), dtype=torch.float32).to(self.device),
-            torch.tensor(np.array(reward_list), dtype=torch.float32).unsqueeze(-1).to(self.device),
-            torch.tensor(np.array(next_state_list), dtype=torch.float32).to(self.device),
-            torch.tensor(np.array(done_list), dtype=torch.float32).unsqueeze(-1).to(self.device),
-        )
-
-    def buffer_len(self):
-        return len(self.buffer)
 
 class MPC_Policy_Net(nn.Module):
     def __init__(self, input_size, output_size):
@@ -63,7 +32,7 @@ class MPC_Policy_Net(nn.Module):
         x = F.gelu(self.linear2(x))
         x = F.gelu(self.linear3(x))
         x = F.gelu(self.linear4(x))
-        x = F.tanh(self.linear5(x))
+        x = torch.tanh(self.linear5(x))
 
         return x
 
@@ -94,10 +63,11 @@ class MPC_DM:
 
         self.state_dim = target_obs
         self.action_dim = target_action
+        self.device = device
 
         # initialize policy network parameters
         self.mpc_policy_net = MPC_Policy_Net(self.state_dim, self.action_dim).to(device)
-        self.mpc_policy_optimizer = optim.Adam(self.mpc_policy_net.parameters(), lr=1e-3, weight_decay=1e-4)
+        self.mpc_policy_optimizer = optim.Adam(self.mpc_policy_net.parameters(), lr=5e-3, weight_decay=1e-4)
 
         # initialize dynamic model parameters
         self.dynamic_model = Dynamic_Model(self.state_dim+self.action_dim, self.state_dim).to(device)
@@ -123,3 +93,81 @@ class MPC_DM:
         self.dynamic_model_optimizer.step()
         
         return loss_mpc, loss_dm
+    
+    def evaluate_policy(self, env, seed):
+        total_reward = 0.0
+        state, _ = env.reset(seed=seed)
+        for _ in range(10):
+            for i in range(env.spec.max_episode_steps):
+                state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device)
+                action = self.mpc_policy_net(state).cpu().detach().numpy().squeeze(0)
+                state, reward, terminated, truncated, _ = env.step(action)
+                total_reward += reward
+        return total_reward / 10
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("MPC_pre_ep", type=int, nargs='?', default=10000)
+    parser.add_argument("--seed", type=int, nargs='?', default=2)
+    parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.8) # random_ratio=1-expert_ratio
+    parser.add_argument("--device", type=str, nargs='?', default="cuda")
+    parser.add_argument("--env", type=str, nargs='?', default="cheetah") # cheetah reacher
+    parser.add_argument("--top_k", type=int, nargs='?', default=10) # cheetah reacher
+    parser.add_argument("--wandb", action='store_true', default=False)
+    args = parser.parse_args()
+
+    seed = args.seed
+    device = args.device
+    seed_everything(args.seed)
+
+    if args.wandb:
+        wandb.init(project="cdpc", name = f'MPC policy&DM: {str(args.seed)}_{args.env} top{str(args.top_k)}', tags=["policy&DM"])
+
+    if args.env == "reacher":
+        target_env = "Reacher-3joints"
+        target_s_dim = 14
+        target_a_dim = 3
+        traj_len = 50
+    elif args.env == "cheetah":
+        target_env = "HalfCheetah-3legs"
+        target_s_dim = 23
+        target_a_dim = 9
+        traj_len = 1000
+
+    ##### 1 Load target domain offline data #####
+    print("##### Loading offline data #####")
+    data_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}.pkl'
+    d4rl_data = load_buffer(data_path)
+    top_k_data = get_top_k_trajs(d4rl_data, traj_len=traj_len, top_k=10)
+    
+    buffer_maxlen = 1000000
+    buffer = ReplayBuffer(buffer_maxlen, device)
+    d4rl2Transition(top_k_data, buffer)
+    print(f"Loaded top {buffer.buffer_len()} trajectories from {data_path}")
+
+
+    ##### 2 Train MPC policy and Dynamic Model #####
+    location = f'./models/{args.env}/seed_{str(args.seed)}/'
+    mpc_location = f'{location}/expert_ratio_{args.expert_ratio}/'
+
+    mpc_dm = MPC_DM(target_s_dim, target_a_dim, args.device)
+    os.makedirs(mpc_location, exist_ok=True)
+    if not os.path.exists(f'{mpc_location}/{str(args.seed)}_MPCModel.pth'):
+        print("##### Training MPC policy and Dynamic Model #####")
+        batch_size = 128
+        for i in range(args.MPC_pre_ep):
+            loss_mpc, loss_dm = mpc_dm.update(batch_size, buffer)
+            #print(f"episode: {i}/{args.MPC_pre_ep}, train/loss_mpc: {loss_mpc}, train/loss_dm: {loss_dm}")
+
+            if i % 100==0:
+                env = gym.make(target_env)
+                reward = mpc_dm.evaluate_policy(env, args.seed)
+                print(f"episode: {i}/{args.MPC_pre_ep}, reward: {reward}")
+                if args.wandb:
+                    wandb.log({"mpc_dm episode": i, "test/BC_score": reward,})
+
+            if args.wandb:
+                wandb.log({"mpc_dm episode": i, "train/loss_mpc": loss_mpc, "train/loss_dm": loss_dm,})
+        torch.save(mpc_dm.mpc_policy_net.state_dict(), f'{mpc_location}/{str(args.seed)}_MPCModel.pth')
+        torch.save(mpc_dm.dynamic_model.state_dict(), f'{mpc_location}/{str(args.seed)}_DynamicModel.pth')

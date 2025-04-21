@@ -194,7 +194,7 @@ if __name__ == '__main__':
         wandb.init(project="cdpc", name = f'baseline: d4rl dataset')
 
     env = gym.make("HalfCheetah-3legs", render_mode="rgb_array")
-    env = gym.make("HalfCheetah-v2")#, exclude_current_positions_from_observation=False)
+    env = gym.make("HalfCheetah-v4")#, exclude_current_positions_from_observation=False)
 
     ## parameters
     batch_size = args.b
@@ -214,7 +214,7 @@ if __name__ == '__main__':
 
     buffer = ReplayBuffer(buffer_maxlen=100000, device=device)
     #store_data_from_file(buffer, f"./traj_data/{str(seed)}_HalfCheetah-3legs_PPO.pt")
-    store_data_from_file(buffer, f"./traj_data/d4rl.pt")
+    store_data_from_file(buffer, f"./traj_data/halfcheetah-medium.pt")
     print(f"Replay buffer size: {len(buffer.buffer)}")
 
     ## train BC

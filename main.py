@@ -6,54 +6,13 @@ import argparse
 import os
 import warnings
 import wandb
-#from stable_baselines3 import SAC
+from stable_baselines3 import SAC
 from sac_v2 import PolicyNetwork
-from MPC_DM_model import ReplayBuffer, MPC_DM
-from MPC import ReplayBuffer_traj, MPC
-
+from MPC_DM_model import MPC_DM
+from MPC import MPC
+from utils import seed_everything, load_buffer, ReplayBuffer_traj, d4rl2Trajs
 
 warnings.filterwarnings('ignore')
-
-
-def collect_target_data(agent_target, target_env, n_traj, expert_ratio, device, seed):
-    buffer_maxlen = 1000000
-    buffer = ReplayBuffer(buffer_maxlen, device)
-    train_set = ReplayBuffer_traj()
-
-    env_target = gym.make(target_env)
-    max_episode_steps = env_target.spec.max_episode_steps 
-    for episode in range(int(n_traj)):
-        score = 0
-        state, _ = env_target.reset(seed=seed*episode) ############################################
-        state_list = []
-        next_state_list = []
-        for _ in range(max_episode_steps):
-            if episode < int(n_traj*expert_ratio):
-                #action, _ = agent_target.predict(state, deterministic=True) # SB3
-                action = agent_target.get_action(state, deterministic=True)
-            else:
-                action = np.random.uniform(low=-1, high=1, size=(env_target.action_space.shape[0],))
-            next_state, reward, terminated, truncated, _ = env_target.step(action)
-            done = truncated or terminated
-
-            done_mask = 0.0 if done else 1.0
-            buffer.push((state, action, reward, next_state, done_mask))
-
-            state_list.append(state)
-            next_state_list.append(next_state)
-            state = next_state
-            score += reward
-            
-            if done: break
-
-        train_set.push(score, state_list, next_state_list)
-        print("episode:{}, Return:{}, buffer_capacity:{}".format(episode, score, buffer.buffer_len()))
-    env_target.close()
-    
-    print(f"Collected {n_traj} trajectories.")
-    print(f"Collected {n_traj*max_episode_steps} transitions.")
-    return train_set, buffer
-
 
 def CDPC(mpc, train_set, mpc_location, Is_wandb):
     Return_val = []
@@ -91,22 +50,10 @@ def CDPC(mpc, train_set, mpc_location, Is_wandb):
                     "train/rec loss": np.mean(loss_rec_list),
                     "train/pref acc": pref_acc,
                     })
-        torch.save(mpc.decoder_net.state_dict(), f'{mpc_location}/{str(mpc.seed)}_decoder.pth')
+        # torch.save(mpc.decoder_net.state_dict(), f'{mpc_location}/{str(mpc.seed)}_decoder.pth')
         # if not os.path.exists('./data/'): os.makedirs('./data/')
         # filename = './data/'+str(args.seed)+'_0.8_0.2.npz'
         # np.savez(filename, reward_val = Return_val)
-    
-
-
-def seed_everything(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False        
 
 
 if __name__ == '__main__':
@@ -137,6 +84,7 @@ if __name__ == '__main__':
         source_a_dim = 2
         target_s_dim = 14
         target_a_dim = 3
+        traj_len = 50
     elif args.env == "cheetah":
         source_env = "HalfCheetah-v4"
         target_env = "HalfCheetah-3legs"
@@ -144,65 +92,39 @@ if __name__ == '__main__':
         source_a_dim = 6
         target_s_dim = 23
         target_a_dim = 9
+        traj_len = 1000
 
 
     hidden_dim = 512
     action_range = 10.0 if args.env=="reacher" else 1.0
 
-    ##### 1 Loading source domain policy #####
+    ##### 1 Load source domain policy #####
     print("##### Loading source domain policy #####")
     #agent = SAC.load(f'./experiments/{args.env}_source_18/models/final_model.zip', device=args.device) # SB3
     agent = PolicyNetwork(source_s_dim, source_a_dim, hidden_dim, action_range, args.device).to(args.device)
     agent.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_source.pth', map_location=args.device ))
 
 
-    ##### 2 Loading target domain expert policy #####
-    print("##### Loading target domain expert policy #####")
-    #agent_target = SAC.load(f'./experiments/{args.env}_target/models/final_model.zip', device=args.device) # SB3
-    agent_target = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, args.device).to(args.device)
-    agent_target.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_target.pth', map_location=args.device ))
-
-
-    ##### 3 Collecting target domain data #####
-    print("##### Collecting target domain data #####")
-    import pickle
-    def save_buffer(buffer, filename):
-        with open(filename, 'wb') as f:
-            pickle.dump(buffer, f)
-
-    def load_buffer(filename):
-        with open(filename, 'rb') as f:
-            return pickle.load(f)
-
+    ##### 2 Load target domain data #####
     os.makedirs('./train_set/', exist_ok=True)
     data_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}.pkl'
     if os.path.exists(data_path):
-        train_set = load_buffer(data_path)
-    else:
-        train_set, buffer = collect_target_data(agent_target, target_env, args.n_traj, args.expert_ratio, args.device, args.seed)
-        save_buffer(train_set, data_path)
-    print(train_set.buffer_len())
+        print("##### Loading target domain offline data #####")
+        d4rl_data = load_buffer(data_path)
+        train_set = ReplayBuffer_traj()
+        d4rl2Trajs(d4rl_data, train_set, traj_len=traj_len)
 
 
-    ##### 4 Train or Loading MPC policy and Dynamic Model #####
+    ##### 3 Load MPC policy and Dynamic Model #####
     mpc_dm = MPC_DM(target_s_dim, target_a_dim, args.device)
     os.makedirs(mpc_location, exist_ok=True)
     if os.path.exists(f'{mpc_location}/{str(args.seed)}_MPCModel.pth'):
         print("##### Loading MPC policy and Dynamic Model #####")
         mpc_dm.mpc_policy_net.load_state_dict(torch.load( f'{mpc_location}/{str(args.seed)}_MPCModel.pth', map_location=args.device ))
         mpc_dm.dynamic_model.load_state_dict(torch.load( f'{mpc_location}/{str(args.seed)}_DynamicModel.pth', map_location=args.device ))
-    else:
-        print("##### Training MPC policy and Dynamic Model #####")
-        batch_size = 128
-        for i in range(args.MPC_pre_ep):
-            loss_mpc, loss_dm = mpc_dm.update(batch_size, buffer)
-            if args.wandb:
-                wandb.log({"mpc_dm episode": i, "train/loss_mpc": loss_mpc, "train/loss_dm": loss_dm,})
-        torch.save(mpc_dm.mpc_policy_net.state_dict(), f'{mpc_location}/{str(args.seed)}_MPCModel.pth')
-        torch.save(mpc_dm.dynamic_model.state_dict(), f'{mpc_location}/{str(args.seed)}_DynamicModel.pth')
 
     
-    ##### 4.5 Load Flow Model #####
+    ##### 3.5 Load Flow Model #####
     flow_model = None
     flow_mean = []
     flow_std = []
@@ -215,7 +137,7 @@ if __name__ == '__main__':
         flow_std = torch.from_numpy(np.load(f'./flowpg/data/{args.env}/seed_{str(args.seed)}_std.npy')).to(args.device).to(torch.float32)
 
 
-    ##### 5 Training state decoder #####
+    ##### 4 Training state decoder #####
     print("##### Training state decoder #####")
     params = {
         'batch_size': args.decoder_batch,

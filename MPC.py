@@ -30,27 +30,6 @@ def cheetah_source_R(state, action, next_state):
     forward_reward = forward_reward_weight * x_velocity
     reward = forward_reward - ctrl_cost
     return reward
-
-class ReplayBuffer_traj():
-    def __init__(self):
-        self.buffer = []
-
-    def push(self, total_rewards, state, next_state):
-        trajectory_info = {
-        'total_rewards': total_rewards,
-        'state': state,
-        'next_state': next_state,
-        }
-        self.buffer.append(trajectory_info)
-
-    def sample(self, combo):
-        trajectory_a = self.buffer[combo[0]]
-        trajectory_b = self.buffer[combo[1]]
-
-        return trajectory_a, trajectory_b
-
-    def buffer_len(self):
-        return len(self.buffer)
     
         
 class BidirectionalLSTM(nn.Module):
@@ -187,7 +166,7 @@ class MPC(object):
         loss_pref = torch.logsumexp(sub_first_rewards, dim=-1).mean()
         pref_acc = (sub_first_rewards[:, 1] < 0).sum().item() / self.batch_size
         
-        dec_loss = loss_pref # no loss_tran + loss_rec
+        dec_loss = loss_pref# + loss_tran + loss_rec # no 
         #enc_loss = loss_rec
 
         self.dec_optimizer.zero_grad()
