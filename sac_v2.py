@@ -9,6 +9,7 @@ import wandb
 import random
 import argparse
 import os
+from utils import seed_everything
 
 class ReplayBuffer:
     def __init__(self, capacity):
@@ -279,10 +280,10 @@ class SAC():
         print("==============================================")
         print("Evaluating...")
         all_rewards = []
-        eval_episode = 5
-        for _ in range(eval_episode):
+        eval_episode = 10
+        for ep in range(eval_episode):
             score = 0
-            state = self.test_env.reset(seed = self.args.seed)[0]
+            state, _ = self.test_env.reset(seed = self.args.seed*ep)
             for _ in range(self.test_env.spec.max_episode_steps):
                 action = self.policy_net.get_action(state, deterministic = True)
                 next_state, reward, terminated, truncated, _ = self.test_env.step(action)
@@ -297,17 +298,6 @@ class SAC():
         print(f"average score: {avg}")
         print("==============================================")
         return avg
-
-
-
-def seed_everything(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
 
 
