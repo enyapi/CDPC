@@ -5,7 +5,6 @@ import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
 import torch.optim as optim
-from itertools import combinations
 import numpy as np
 from stable_baselines3.common.vec_env import DummyVecEnv
 
@@ -124,6 +123,7 @@ class MPC(object):
         self.dynamic_model = self.mpc_dm.dynamic_model
     
     def learn(self, train_set):
+        import time
         # organize dateset
         index = list(range(train_set.buffer_len()))
         selected_combinations = []
@@ -171,7 +171,7 @@ class MPC(object):
         loss_pref = torch.logsumexp(sub_first_rewards, dim=-1).mean()
         pref_acc = (sub_first_rewards[:, 1] < 0).sum().item() / self.batch_size
         
-        dec_loss = loss_pref# + 0.1*loss_tran + 0.3*loss_rec # no 
+        dec_loss = loss_pref + 0.1*loss_tran + 0.3*loss_rec # no 
         #enc_loss = loss_rec
 
         self.dec_optimizer.zero_grad()
@@ -211,9 +211,6 @@ class MPC(object):
         loss_rec = 0
         R_s_tensor = torch.zeros((self.batch_size, 1)).to(self.device)
 
-        import time
-        start1 = time.perf_counter()
-
         for i in range(state[0,:,0].shape[0]): # trajectory length
             for n, env in enumerate(vec_env.envs):
                 env.reset_specific(state=dec_s[n].cpu().detach().numpy())
@@ -228,7 +225,7 @@ class MPC(object):
                 elif self.env == "cheetah":
                     r = cheetah_source_R(dec_s[b], actions[b], tran_s1[b])
                 R_s_tensor[b] += (0.99**i)*r
-
+            
             dec_s1 = self.decoder_net(next_state[:,i,:].squeeze(1))
             if self.use_flow: 
                 dec_s1 = self.flow_model.g(dec_s1.to(torch.float64))[0].to(torch.float32)

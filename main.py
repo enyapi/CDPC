@@ -15,7 +15,7 @@ warnings.filterwarnings('ignore')
 def CDPC(mpc, train_set, mpc_location, Is_wandb):
     Return_val = []
     # val state decoder
-    total_reward = mpc.evaluate() 
+    total_reward = 0#mpc.evaluate() 
     if Is_wandb:
         wandb.log({"cdpc episode": 0, "valid/reward": total_reward, })
 
@@ -36,7 +36,7 @@ def CDPC(mpc, train_set, mpc_location, Is_wandb):
         # val state decoder
         eval_freq = 1
         if j % eval_freq == 0:
-            total_reward = mpc.evaluate() 
+            total_reward = 0#mpc.evaluate() 
             print(f'episode: {j}, avg. validation reward: {total_reward}')
 
         Return_val.append(total_reward)
@@ -97,16 +97,17 @@ if __name__ == '__main__':
     hidden_dim = 512
     action_range = 10.0 if args.env=="reacher" else 1.0
 
-    ##### 1 Load source domain policy #####
+##### 1 Load source domain policy #####
     print("##### Loading source domain policy #####")
     #agent = SAC.load(f'./experiments/{args.env}_source_18/models/final_model.zip', device=args.device) # SB3
     agent = PolicyNetwork(source_s_dim, source_a_dim, hidden_dim, action_range, args.device).to(args.device)
     agent.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_source.pth', map_location=args.device ))
 
 
-    ##### 2 Load target domain data #####
+##### 2 Load target domain data #####
     os.makedirs('./train_set/', exist_ok=True)
-    data_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}.pkl'
+    #data_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}.pkl'
+    data_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_medium_expert.pkl'
     if os.path.exists(data_path):
         print("##### Loading target domain offline data #####")
         d4rl_data = load_buffer(data_path)
@@ -114,7 +115,7 @@ if __name__ == '__main__':
         d4rl2Trajs(d4rl_data, train_set, traj_len=traj_len)
 
 
-    ##### 3 Load MPC policy and Dynamic Model #####
+##### 3 Load MPC policy and Dynamic Model #####
     mpc_dm = MPC_DM(target_s_dim, target_a_dim, args.device)
     os.makedirs(mpc_location, exist_ok=True)
     if os.path.exists(f'{mpc_location}/{str(args.seed)}_MPCModel.pth'):
@@ -123,7 +124,7 @@ if __name__ == '__main__':
         mpc_dm.dynamic_model.load_state_dict(torch.load( f'{mpc_location}/{str(args.seed)}_DynamicModel.pth', map_location=args.device ))
 
     
-    ##### 3.5 Load Flow Model #####
+##### 3.5 Load Flow Model #####
     flow_model = None
     flow_mean = []
     flow_std = []
@@ -136,7 +137,7 @@ if __name__ == '__main__':
         flow_std = torch.from_numpy(np.load(f'./flowpg/data/{args.env}/seed_{str(args.seed)}_std.npy')).to(args.device).to(torch.float32)
 
 
-    ##### 4 Training state decoder #####
+##### 4 Training state decoder #####
     print("##### Training state decoder #####")
     params = {
         'batch_size': args.decoder_batch,

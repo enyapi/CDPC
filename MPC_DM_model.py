@@ -132,11 +132,13 @@ if __name__ == '__main__':
         target_a_dim = 9
         traj_len = 1000
 
-    ##### 1 Load target domain offline data #####
+
+##### 1 Load target domain offline data #####
     print("##### Loading offline data #####")
-    data_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}.pkl'
+    #data_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}.pkl'
+    data_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_medium_expert.pkl'
     d4rl_data = load_buffer(data_path)
-    top_k_data = get_top_k_trajs(d4rl_data, traj_len=traj_len, top_k=10)
+    top_k_data = get_top_k_trajs(d4rl_data, traj_len=traj_len, top_k=args.top_k)
     
     buffer_maxlen = 1000000
     buffer = ReplayBuffer(buffer_maxlen, device)
@@ -144,7 +146,7 @@ if __name__ == '__main__':
     print(f"Loaded top {buffer.buffer_len()} trajectories from {data_path}")
 
 
-    ##### 2 Train MPC policy and Dynamic Model #####
+##### 2 Train MPC policy and Dynamic Model #####
     location = f'./models/{args.env}/seed_{str(args.seed)}/'
     mpc_location = f'{location}/expert_ratio_{args.expert_ratio}/'
 
