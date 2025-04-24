@@ -6,18 +6,20 @@ import argparse
 import os
 import warnings
 import wandb
-#from stable_baselines3 import SAC
-from sac_v2 import PolicyNetwork
+from stable_baselines3 import SAC
+from sac_v2 import PolicyNetwork, SoftQNetwork
 from MPC_DM_model import ReplayBuffer, MPC_DM
+# from sac_v2 import ReplayBuffer
 from MPC import ReplayBuffer_traj, MPC
 
 
 warnings.filterwarnings('ignore')
 
 
-def collect_target_data(agent_target, target_env, n_traj, expert_ratio, device, seed):
+def collect_target_data(agent_target, agent_target_medium, target_env, n_traj, expert_ratio, device, seed):
     buffer_maxlen = 1000000
     buffer = ReplayBuffer(buffer_maxlen, device)
+    buffer_expert_only = ReplayBuffer(buffer_maxlen, device)
     train_set = ReplayBuffer_traj()
 
     env_target = gym.make(target_env)
@@ -29,15 +31,22 @@ def collect_target_data(agent_target, target_env, n_traj, expert_ratio, device, 
         next_state_list = []
         for _ in range(max_episode_steps):
             if episode < int(n_traj*expert_ratio):
-                #action, _ = agent_target.predict(state, deterministic=True) # SB3
-                action = agent_target.get_action(state, deterministic=True)
+                if episode % 2 == 0:
+                    # action, _ = agent_target.predict(state, deterministic=True) # SB3
+                    action = agent_target.get_action(state, deterministic=True)
+                else:
+                    action = agent_target_medium.get_action(state, deterministic=True)
             else:
                 action = np.random.uniform(low=-1, high=1, size=(env_target.action_space.shape[0],))
+                
             next_state, reward, terminated, truncated, _ = env_target.step(action)
             done = truncated or terminated
 
             done_mask = 0.0 if done else 1.0
             buffer.push((state, action, reward, next_state, done_mask))
+
+            if episode < int(n_traj*expert_ratio):
+                buffer_expert_only.push((state, action, reward, next_state, done_mask))
 
             state_list.append(state)
             next_state_list.append(next_state)
@@ -46,16 +55,20 @@ def collect_target_data(agent_target, target_env, n_traj, expert_ratio, device, 
             
             if done: break
 
+        # if truncated:
+        #     action = agent_target.get_action(state, deterministic=True)
+        #     score += target_Q(torch.tensor(state[np.newaxis, :], dtype=torch.float).to('cuda'), torch.tensor(action[np.newaxis, :], dtype=torch.float).to('cuda'))
+        
         train_set.push(score, state_list, next_state_list)
         print("episode:{}, Return:{}, buffer_capacity:{}".format(episode, score, buffer.buffer_len()))
     env_target.close()
     
     print(f"Collected {n_traj} trajectories.")
     print(f"Collected {n_traj*max_episode_steps} transitions.")
-    return train_set, buffer
+    return train_set, buffer, buffer_expert_only
 
 
-def CDPC(mpc, train_set, mpc_location, Is_wandb):
+def CDPC(mpc, train_set, buffer, mpc_location, Is_wandb):
     Return_val = []
     # val state decoder
     total_reward = mpc.evaluate() 
@@ -70,18 +83,17 @@ def CDPC(mpc, train_set, mpc_location, Is_wandb):
         loss_tran_list, loss_pref_list, loss_rec_list = [], [], []
         for _ in range(1):
             mpc.decoder_net.train()
-            loss_tran, loss_pref, loss_rec, pref_acc = mpc.learn(train_set)
+            loss_tran, loss_pref, loss_rec, pref_acc = mpc.learn(train_set, buffer)
             loss_tran_list.append(loss_tran)
             loss_pref_list.append(loss_pref)
             loss_rec_list.append(loss_rec)
         print(f'episode: {j}, transition loss: {np.mean(loss_tran_list)}, pref loss: {np.mean(loss_pref_list)}, rec loss: {np.mean(loss_rec_list)}, pref acc: {pref_acc}')
 
         # val state decoder
-        eval_freq = 1
+        eval_freq = 100
         if j % eval_freq == 0:
             total_reward = mpc.evaluate() 
             print(f'episode: {j}, avg. validation reward: {total_reward}')
-
         Return_val.append(total_reward)
         if Is_wandb:
             wandb.log({"cdpc episode": j,
@@ -91,7 +103,7 @@ def CDPC(mpc, train_set, mpc_location, Is_wandb):
                     "train/rec loss": np.mean(loss_rec_list),
                     "train/pref acc": pref_acc,
                     })
-        torch.save(mpc.decoder_net.state_dict(), f'{mpc_location}/{str(mpc.seed)}_decoder.pth')
+        torch.save(mpc.decoder_net.state_dict(), f'{mpc_location}/{str(mpc.seed)}_decoder_{args.decoder_ep}.pth')
         # if not os.path.exists('./data/'): os.makedirs('./data/')
         # filename = './data/'+str(args.seed)+'_0.8_0.2.npz'
         # np.savez(filename, reward_val = Return_val)
@@ -113,7 +125,7 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
     parser.add_argument("MPC_pre_ep", type=int, nargs='?', default=10000)
-    parser.add_argument("decoder_batch", type=int, nargs='?', default=32)
+    parser.add_argument("--decoder_batch", type=int, nargs='?', default=32)
     parser.add_argument("--seed", type=int, nargs='?', default=2)
     parser.add_argument("--n_traj", type=int, nargs='?', default=10000) # 1000/10000
     parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.2) # random_ratio=1-expert_ratio
@@ -146,7 +158,7 @@ if __name__ == '__main__':
         target_a_dim = 9
 
 
-    hidden_dim = 512
+    hidden_dim = 256
     action_range = 10.0 if args.env=="reacher" else 1.0
 
     ##### 1 Loading source domain policy #####
@@ -154,14 +166,18 @@ if __name__ == '__main__':
     #agent = SAC.load(f'./experiments/{args.env}_source_18/models/final_model.zip', device=args.device) # SB3
     agent = PolicyNetwork(source_s_dim, source_a_dim, hidden_dim, action_range, args.device).to(args.device)
     agent.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_source.pth', map_location=args.device ))
-
+    agent_Q = SoftQNetwork(source_s_dim, source_a_dim, hidden_dim)
+    # agent_Q.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_source_Q_function.pth', map_location=args.device ))
 
     ##### 2 Loading target domain expert policy #####
     print("##### Loading target domain expert policy #####")
-    #agent_target = SAC.load(f'./experiments/{args.env}_target/models/final_model.zip', device=args.device) # SB3
+    # agent_target = SAC.load('models/cheetah/seed_7/HalfCheetah-3legs_SAC_3_128_200000_2.zip', device=args.device) # SB3
     agent_target = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, args.device).to(args.device)
+    agent_target_medium = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, args.device).to(args.device)
+    # target_Q = SoftQNetwork(target_s_dim, target_a_dim, hidden_dim).to(args.device)
     agent_target.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_target.pth', map_location=args.device ))
-
+    agent_target_medium.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_target_medium.pth', map_location=args.device ))
+    # target_Q.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_target_Q_function.pth', map_location=args.device ))
 
     ##### 3 Collecting target domain data #####
     print("##### Collecting target domain data #####")
@@ -176,13 +192,21 @@ if __name__ == '__main__':
 
     os.makedirs('./train_set/', exist_ok=True)
     data_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}.pkl'
+    buffer_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_buffer.pkl'
+    buffer_expert_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_buffer_expert.pkl'
+    replay_buffer_path = f'./train_set/{args.env}_seed_{str(args.seed)}_replay.pkl'
+    data_path_expert_only = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_expert_only.pkl'
     if os.path.exists(data_path):
         train_set = load_buffer(data_path)
+        buffer = load_buffer(buffer_path)
+        buffer_expert_only = load_buffer(buffer_expert_path)
+        replay_buffer = load_buffer(replay_buffer_path)
     else:
-        train_set, buffer = collect_target_data(agent_target, target_env, args.n_traj, args.expert_ratio, args.device, args.seed)
+        train_set, buffer, buffer_expert_only = collect_target_data(agent_target, agent_target_medium, target_env, args.n_traj, args.expert_ratio, args.device, args.seed)
         save_buffer(train_set, data_path)
+        save_buffer(buffer, buffer_path)
+        save_buffer(buffer_expert_only, buffer_expert_path)
     print(train_set.buffer_len())
-
 
     ##### 4 Train or Loading MPC policy and Dynamic Model #####
     mpc_dm = MPC_DM(target_s_dim, target_a_dim, args.device)
@@ -195,7 +219,7 @@ if __name__ == '__main__':
         print("##### Training MPC policy and Dynamic Model #####")
         batch_size = 128
         for i in range(args.MPC_pre_ep):
-            loss_mpc, loss_dm = mpc_dm.update(batch_size, buffer)
+            loss_mpc, loss_dm = mpc_dm.update(batch_size, buffer_expert_only)
             if args.wandb:
                 wandb.log({"mpc_dm episode": i, "train/loss_mpc": loss_mpc, "train/loss_dm": loss_dm,})
         torch.save(mpc_dm.mpc_policy_net.state_dict(), f'{mpc_location}/{str(args.seed)}_MPCModel.pth')
@@ -227,6 +251,7 @@ if __name__ == '__main__':
         'target_state_space_dim': target_s_dim,
         'target_action_space_dim': target_a_dim,
         'agent': agent,
+        'agent_Q': agent_Q,
         "mpc_dm": mpc_dm,
         "device": args.device,
         "seed": args.seed,
@@ -236,4 +261,4 @@ if __name__ == '__main__':
         "flow_mean": flow_mean,
         "flow_std": flow_std,
     }
-    CDPC(MPC(**params), train_set, mpc_location, args.wandb)
+    CDPC(MPC(**params), train_set, buffer, mpc_location, args.wandb)
