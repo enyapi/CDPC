@@ -6,6 +6,7 @@ import numpy as np
 import torch.nn.functional as F
 import torch.optim as optim
 from itertools import combinations
+from MPC_DM_model import *
 import numpy as np
 from stable_baselines3.common.vec_env import DummyVecEnv
 
@@ -102,6 +103,25 @@ class Decoder_Net(nn.Module):
         else:
             self.hidden = ((torch.randn(self.num_layers, batch_size, self.hidden_size) * 0.01 + 0.0).to(self.device), (torch.randn(self.num_layers, batch_size, self.hidden_size)*0.001).to(self.device))
             return self.hidden
+        
+class Decoder_Net2(nn.Module):
+    def __init__(self, input_size, output_size):
+        super().__init__()
+        self.linear1 = nn.Linear(input_size, 32)
+        self.linear2 = nn.Linear(32, 64)
+        self.linear3 = nn.Linear(64, 128)
+        self.linear4 = nn.Linear(128, 256)
+        self.linear5 = nn.Linear(256, output_size)
+        
+       
+    def forward(self, x):
+        x = F.relu(self.linear1(x))
+        x = F.relu(self.linear2(x))
+        x = F.relu(self.linear3(x))
+        x = F.relu(self.linear4(x))
+        x = self.linear5(x)
+
+        return x
 
 class Encoder_Net(nn.Module):
     def __init__(self, input_size, output_size):
@@ -124,7 +144,7 @@ class Encoder_Net(nn.Module):
     
 
 class MPC(object):
-    def __init__(self, h=20, N=50, argmin=True, **kwargs):
+    def __init__(self, h=20, N=50, argmin=True, load_decoder=False, **kwargs):
         for name, value in kwargs.items():
             setattr(self, name, value)
         self.d = self.target_action_space_dim      # dimension of function input X
@@ -136,6 +156,7 @@ class MPC(object):
 
         # state AE
         self.decoder_net = Decoder_Net(self.target_state_space_dim, self.source_state_space_dim, self.batch_size, self.device, self.use_flow).to(self.device)
+        # self.decoder_net = Decoder_Net2(self.target_state_space_dim, self.source_state_space_dim).to(self.device)
         self.encoder_net = Encoder_Net(self.source_state_space_dim, self.target_state_space_dim).to(self.device)
         self.dec_optimizer = optim.Adam(self.decoder_net.parameters(), lr=self.lr)
         self.enc_optimizer = optim.Adam(self.encoder_net.parameters(), lr=self.lr)
@@ -143,8 +164,12 @@ class MPC(object):
         # mpc policy net
         self.mpc_policy_net = self.mpc_dm.mpc_policy_net
         self.dynamic_model = self.mpc_dm.dynamic_model
+
+        if load_decoder:
+            self.decoder_net.load_state_dict(torch.load('models/cheetah/seed_2/expert_ratio_1.0/2_decoder_500.pth', weights_only=True, map_location='cuda'))
     
-    def learn(self, train_set):
+    # def learn(self, train_set):
+    def learn(self, train_set:ReplayBuffer_traj, buffer:ReplayBuffer):
         # organize dateset
         index = list(range(train_set.buffer_len()))
         combinations_list = list(combinations(index, 2))
@@ -169,9 +194,21 @@ class MPC(object):
         next_state_a = torch.stack(next_state_a, dim=0).to(self.device)
         state_b = torch.stack(state_b, dim=0).to(self.device)
         next_state_b = torch.stack(next_state_b, dim=0).to(self.device)
+
+        # R_s_a_tensor = self.pref_calculation(state_a)
+        # R_s_b_tensor = self.pref_calculation(state_b)
+
+        # ## preference consistency loss
+        # result_tensor = torch.cat((R_s_a_tensor, R_s_b_tensor), dim=-1).type(torch.float32)#.unsqueeze(0)
+        # sub_first_rewards = result_tensor - result_tensor[:, 0][:, None]
+        # loss_pref = torch.logsumexp(sub_first_rewards, dim=-1).mean()
+        # pref_acc = (sub_first_rewards[:, 1] < 0).sum().item() / self.batch_size
+
+        # state_batch, action_batch, reward_batch, next_state_batch, done_batch = buffer.sample(batch_size=self.batch_size)
+        # loss_tran, loss_rec = self.loss_without_pref(state_batch, next_state_batch)
         
-        # update state decoder
-        ## traj a, b
+        # # update state decoder
+        # # traj a, b
         R_s_a_tensor, loss_tran_a, loss_rec_a = self.train_loss(state_a, next_state_a)
         R_s_b_tensor, loss_tran_b, loss_rec_b = self.train_loss(state_b, next_state_b)
 
@@ -187,15 +224,16 @@ class MPC(object):
         loss_pref = torch.logsumexp(sub_first_rewards, dim=-1).mean()
         pref_acc = (sub_first_rewards[:, 1] < 0).sum().item() / self.batch_size
         
-        dec_loss = loss_pref # no loss_tran + loss_rec
-        #enc_loss = loss_rec
+        dec_loss = 0.1 * loss_tran + 0.3 * loss_rec + loss_pref
+        # dec_loss = 0.1 * loss_tran + loss_pref
+        enc_loss = loss_rec
 
         self.dec_optimizer.zero_grad()
-        #self.enc_optimizer.zero_grad()
+        self.enc_optimizer.zero_grad()
+        enc_loss.backward(retain_graph=True)
         dec_loss.backward()
-        #enc_loss.backward(retain_graph=True)
         self.dec_optimizer.step()
-        #self.enc_optimizer.step()
+        self.enc_optimizer.step()
 
         return loss_tran.item(), loss_pref.item(), loss_rec.item(), pref_acc
     
@@ -210,6 +248,55 @@ class MPC(object):
             return env
         return _init
     
+    def loss_without_pref(self, state_batch, next_state_batch):
+        loss_function = nn.MSELoss()
+        
+        env_fns = [self.make_env(self.seed) for _ in range(self.batch_size)]
+        vec_env = DummyVecEnv(env_fns)
+
+        decoded_state = self.decoder_net(state_batch)
+
+        for n, env in enumerate(vec_env.envs):
+            env.reset_specific(state=decoded_state[n].cpu().detach().numpy())
+
+        actions = self.agent.get_action(decoded_state.cpu(), deterministic=True)
+        tran_s1, r, _, _ = vec_env.step(actions)
+        tran_s1 = torch.tensor(tran_s1, dtype=torch.float32).to(self.device)
+
+        decoded_state1 = self.decoder_net(next_state_batch)
+        reconstructed_state = self.encoder_net(decoded_state)
+
+        loss_tran = loss_function(tran_s1, decoded_state1)
+        loss_rec = loss_function(reconstructed_state, state_batch)
+
+        return loss_tran, loss_rec
+
+    def pref_calculation(self, state):
+        
+        env_fns = [self.make_env(self.seed) for _ in range(self.batch_size)]
+        vec_env = DummyVecEnv(env_fns)
+
+        dec_s = self.decoder_net(state[:,0,:].squeeze(1))
+            
+        R_s_tensor = torch.zeros((self.batch_size, 1)).to(self.device)
+
+        for i in range(state[0,:,0].shape[0]): # trajectory length
+            for n, env in enumerate(vec_env.envs):
+                env.reset_specific(state=dec_s[n].cpu().detach().numpy())
+            
+            actions = self.agent.get_action(dec_s.cpu(), deterministic=True)
+            tran_s1, r, _, _ = vec_env.step(actions)
+            tran_s1 = torch.tensor(tran_s1, dtype=torch.float32).to(self.device)
+
+            for b in range(self.batch_size):
+                if self.env == "reacher":
+                    r = reacher_source_R(dec_s[b], actions[b])
+                elif self.env == "cheetah":
+                    r = cheetah_source_R(dec_s[b], actions[b], tran_s1[b])
+                R_s_tensor[b] += (0.99**i)*r
+
+        vec_env.close()
+        return R_s_tensor
 
     def train_loss(self, state, next_state):
         loss_function = nn.MSELoss()
@@ -253,7 +340,49 @@ class MPC(object):
             dec_s = dec_s1
         vec_env.close()
         return R_s_tensor, loss_tran, loss_rec
-    
+
+    def train_loss_with_0_action(self, state, next_state):
+        loss_function = nn.MSELoss()
+        
+        env_fns = [self.make_env(self.seed) for _ in range(self.batch_size)]
+        vec_env = DummyVecEnv(env_fns)
+
+        self.decoder_net.reset_hidden(self.batch_size, flag=True)
+        dec_s = self.decoder_net(state[:,0,:].squeeze(1))
+        if self.use_flow: 
+            dec_s = self.flow_model.g(dec_s.to(torch.float64))[0].to(torch.float32)
+            dec_s = dec_s * self.flow_std + self.flow_mean
+            
+        loss_tran = 0
+        loss_rec = 0
+        R_s_tensor = torch.zeros((self.batch_size, 1)).to(self.device)
+
+        for i in range(state[0,:,0].shape[0]): # trajectory length
+            for n, env in enumerate(vec_env.envs):
+                env.reset_specific(state=dec_s[n].cpu().detach().numpy())
+            
+            actions = self.agent.get_action(dec_s.cpu(), deterministic=True)
+            tran_s1, r, _, _ = vec_env.step(np.zeros(actions.shape))
+            tran_s1 = torch.tensor(tran_s1, dtype=torch.float32).to(self.device)
+
+            for b in range(self.batch_size):
+                if self.env == "reacher":
+                    r = reacher_source_R(dec_s[b], actions[b])
+                elif self.env == "cheetah":
+                    r = cheetah_source_R(dec_s[b], actions[b], tran_s1[b])
+                R_s_tensor[b] += (0.99**i)*r
+
+            dec_s1 = self.decoder_net(next_state[:,i,:].squeeze(1))
+            if self.use_flow: 
+                dec_s1 = self.flow_model.g(dec_s1.to(torch.float64))[0].to(torch.float32)
+                dec_s1 = dec_s1 * self.flow_std + self.flow_mean
+            loss_tran += loss_function(tran_s1, dec_s1)
+
+            rec_s = self.encoder_net(dec_s)  ###
+            loss_rec += loss_function(rec_s, state[:,i,:].squeeze(1))  ###
+            dec_s = dec_s1
+        vec_env.close()
+        return R_s_tensor, loss_tran, loss_rec
 
     def compare_trajectories(self, trajectory_info_a, trajectory_info_b):
         if trajectory_info_a['total_rewards'] > trajectory_info_b['total_rewards']:
@@ -294,12 +423,17 @@ class MPC(object):
         return traj_state, traj_action
 
     
-    def __decodeTraj(self, s, a): ## 0.17
+    def __decodeTraj(self, previous_states, s, a): ## 0.17
         with torch.no_grad():
             env_fns = [self.make_env(self.seed) for _ in range(self.N)]
             vec_env = DummyVecEnv(env_fns)
 
             self.decoder_net.reset_hidden(self.N)
+            # reconstruct hidden state
+            for previous_state in previous_states:
+                previous_state = torch.tensor(np.concatenate([previous_state[np.newaxis, :] for i in range(self.N)], axis=0), dtype=torch.float32, device=self.device)
+                self.decoder_net(previous_state)
+
             states = self.decoder_net(s[:, 0, :])
             if self.use_flow: 
                 states = self.flow_model.g(states.to(torch.float64))[0].to(torch.float32)
@@ -330,13 +464,69 @@ class MPC(object):
                 if self.use_flow: 
                     next_states = self.flow_model.g(next_states.to(torch.float64))[0].to(torch.float32)
                     next_states = next_states * self.flow_std + self.flow_mean
-                rewards += r
+                rewards += r * (0.99 ** j)
                 states = next_states
+
+            # add a value from value function
+            actions = self.agent.get_action(states.cpu(), deterministic=True)
+            # rewards += (0.99 ** self.h) * self.agent_Q(states.cpu(), torch.tensor(actions)).cpu().detach().numpy().squeeze()
 
             best_idx = np.argsort(rewards)[-1]
             best_action = a[best_idx, 0, :]
         return best_action, rewards[best_idx]
 
+    def __decodeTraj_zero_action(self, previous_states, s, a): ## 0.17
+        with torch.no_grad():
+            env_fns = [self.make_env(self.seed) for _ in range(self.N)]
+            vec_env = DummyVecEnv(env_fns)
+
+            self.decoder_net.reset_hidden(self.N)
+
+            for previous_state in previous_states:
+                previous_state = torch.tensor(np.concatenate([previous_state[np.newaxis, :] for i in range(self.N)], axis=0), dtype=torch.float32, device=self.device)
+                self.decoder_net(previous_state)
+
+            states = self.decoder_net(s[:, 0, :])
+            if self.use_flow: 
+                states = self.flow_model.g(states.to(torch.float64))[0].to(torch.float32)
+                states = states * self.flow_std + self.flow_mean
+
+            rewards = np.zeros(self.N)
+            for j in range(self.h):
+                for i, env in enumerate(vec_env.envs):
+                    env.reset_specific(state=states[i].cpu().detach().numpy())
+
+                actions = self.agent.get_action(states.cpu(), deterministic=True)
+                actions = np.zeros(actions.shape)
+                #actions, _ = self.agent.predict(states.cpu().detach().numpy(), deterministic=True) # SB3-SAC default
+                #actions = self.agent.policy.actor(states.unsqueeze(0), deterministic=True) # SB3-SAC GPU
+
+                if self.env == "reacher":
+                    r = np.array([
+                        reacher_source_R(states[i], actions[i]).cpu().detach().numpy()
+                        for i in range(self.N)
+                    ])
+                elif self.env == "cheetah":
+                    obs, r, _, _ = vec_env.step(actions)
+                    r = np.array([
+                        cheetah_source_R(states[i], actions[i], obs[i]).cpu().detach().numpy()
+                        for i in range(self.N)
+                    ])
+
+                next_states = self.decoder_net(s[:, j+1, :])
+                if self.use_flow: 
+                    next_states = self.flow_model.g(next_states.to(torch.float64))[0].to(torch.float32)
+                    next_states = next_states * self.flow_std + self.flow_mean
+                rewards += r
+                states = next_states
+
+            # add a value from value function
+            # actions = self.agent.get_action(states.cpu(), deterministic=True)
+            # rewards += self.agent_Q(states.cpu(), torch.tensor(actions)).cpu().detach().numpy().squeeze()
+
+            best_idx = np.argsort(rewards)[-1]
+            best_action = a[best_idx, 0, :]
+        return best_action, rewards[best_idx]
 
     def evaluate(self):
         env_target = gym.make(self.target_env, render_mode='rgb_array') #rgb_array
@@ -346,14 +536,18 @@ class MPC(object):
         s0, _ = env_target.reset(seed=self.seed)
         total_reward = 0
         best_rewards = 0
+        states_collector = []
         for i in range(env_target.spec.max_episode_steps):
             ## MPC inference
             # generate action sequence using policy network and get state sequence
             s, a = self.__sampleTraj(s0)
             # decode state sequence to source state sequence and get sorted action sequence (in terms of reward)
-            a0_target, best_reward = self.__decodeTraj(s, a)
+            # a0_target, best_reward = self.__decodeTraj(s, a)
+            a0_target, best_reward = self.__decodeTraj(states_collector, s, a)
+            a0_target = a0_target.cpu().detach().numpy()
+            states_collector.append(s0)
 
-            s1, r1, terminated, truncated, _ = env_target.step(a0_target.cpu().detach().numpy())
+            s1, r1, terminated, truncated, _ = env_target.step(a0_target)
             # print(i)
             # print(s1)
             # print(a0_target)

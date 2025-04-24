@@ -9,6 +9,7 @@ import wandb
 import random
 import argparse
 import os
+import pickle
 
 class ReplayBuffer:
     def __init__(self, capacity):
@@ -63,7 +64,7 @@ class SoftQNetwork(nn.Module):
         
         self.linear1 = nn.Linear(num_inputs + num_actions, hidden_size)
         self.linear2 = nn.Linear(hidden_size, hidden_size)
-        self.linear3 = nn.Linear(hidden_size, hidden_size)
+        # self.linear3 = nn.Linear(hidden_size, hidden_size)
         self.linear4 = nn.Linear(hidden_size, 1)
         
         self.linear4.weight.data.uniform_(-init_w, init_w)
@@ -73,7 +74,7 @@ class SoftQNetwork(nn.Module):
         x = torch.cat([state, action], 1) # the dim 0 is number of samples
         x = F.relu(self.linear1(x))
         x = F.relu(self.linear2(x))
-        x = F.relu(self.linear3(x))
+        # x = F.relu(self.linear3(x))
         x = self.linear4(x)
         return x
         
@@ -87,8 +88,8 @@ class PolicyNetwork(nn.Module):
         
         self.linear1 = nn.Linear(num_inputs, hidden_size)
         self.linear2 = nn.Linear(hidden_size, hidden_size)
-        self.linear3 = nn.Linear(hidden_size, hidden_size)
-        self.linear4 = nn.Linear(hidden_size, hidden_size)
+        # self.linear3 = nn.Linear(hidden_size, hidden_size)
+        # self.linear4 = nn.Linear(hidden_size, hidden_size)
 
         self.mean_linear = nn.Linear(hidden_size, num_actions)
         self.mean_linear.weight.data.uniform_(-init_w, init_w)
@@ -107,8 +108,8 @@ class PolicyNetwork(nn.Module):
     def forward(self, state):
         x = F.relu(self.linear1(state))
         x = F.relu(self.linear2(x))
-        x = F.relu(self.linear3(x))
-        x = F.relu(self.linear4(x))
+        # x = F.relu(self.linear3(x))
+        # x = F.relu(self.linear4(x))
 
         mean    = (self.mean_linear(x))
         # mean    = F.leaky_relu(self.mean_linear(x))
@@ -313,11 +314,12 @@ def seed_everything(seed):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("ep", type=int, nargs='?', default=10000)
+    parser.add_argument("--ep", type=int, nargs='?', default=10000)
     parser.add_argument("--seed", type=int, nargs='?', default=2)
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
     parser.add_argument("--domain", type=str, nargs='?', default="source")
     parser.add_argument("--env", type=str, nargs='?', default="cheetah")
+    parser.add_argument("--hidden_dim", type=str, nargs='?', default=256)
     
     args = parser.parse_args()
     seed_everything(args.seed)
@@ -334,7 +336,7 @@ if __name__ == '__main__':
         env = gym.make("HalfCheetah-v4", exclude_current_positions_from_observation=False) if args.domain == "source" else gym.make("HalfCheetah-3legs")
 
     # Params
-    batch_size = 300
+    batch_size = 256
     
     wandb.config = {
         "batch_size": batch_size
@@ -344,7 +346,7 @@ if __name__ == '__main__':
 
     replay_buffer_size = 1e6
     replay_buffer = ReplayBuffer(replay_buffer_size)
-    hidden_dim = 512
+    hidden_dim = args.hidden_dim
     action_range = 10.0 if args.env=="reacher" else 1.0
     DETERMINISTIC=False
     AUTO_ENTROPY=True
@@ -359,6 +361,7 @@ if __name__ == '__main__':
     if not os.path.exists(f'{location}/{str(args.seed)}_{args.env}_{args.domain}.pth'):
         test_score = agent.evaluate()
         wandb.log({"episode": 0, "test/score": test_score})
+
         for episode in range(1, args.ep+1):
             score = 0
             state = env.reset(seed = args.seed)[0]
@@ -391,4 +394,14 @@ if __name__ == '__main__':
             ## save model
             if episode % 100 == 0:
                 torch.save(agent.policy_net.state_dict(), f'{location}/{str(args.seed)}_{args.env}_{args.domain}.pth')
+                torch.save(agent.soft_q_net1.state_dict(), f'{location}/{str(args.seed)}_{args.env}_{args.domain}_Q_function.pth')
+
+            ## save medium
+            if episode == args.ep // 2:
+                torch.save(agent.policy_net.state_dict(), f'{location}/{str(args.seed)}_{args.env}_{args.domain}_medium.pth')
         env.close()
+
+        ## store replay buffer
+        if args.domain == 'target':
+            with open(f'train_set/{args.env}_seed_{str(args.seed)}_replay.pkl', 'wb') as f:
+                pickle.dump(replay_buffer, f)
