@@ -208,13 +208,30 @@ if __name__ == '__main__':
     action_projector = Action_Projector(target_s_dim, target_a_dim, source_a_dim).to(args.device)
     state_projector = State_Projector(target_s_dim, source_s_dim).to(args.device)
 
-    action_projector.load_state_dict(torch.load('models/cheetah/seed_2/expert_ratio_1.0/2_action_projector_200.pth', weights_only=True, map_location='cuda'))
-    state_projector.load_state_dict(torch.load('models/cheetah/seed_2/expert_ratio_1.0/2_state_projector_200.pth', weights_only=True, map_location='cuda'))
+    action_projector.load_state_dict(torch.load(f'models/{args.env}/seed_{str(args.seed)}/expert_ratio_1.0/{str(args.seed)}_action_projector_200.pth', weights_only=True, map_location='cuda'))
+    state_projector.load_state_dict(torch.load(f'models/{args.env}/seed_{str(args.seed)}/expert_ratio_1.0/{str(args.seed)}_state_projector_200.pth', weights_only=True, map_location='cuda'))
+
+    num_BC = len(mpc_dms)
+    horizon = 50
+    with_MPC = False
+    with_Q = False
+
+    avg_scores = []
+    for BC_ID in range(num_BC):
+        total = 0
+        for i in range(10):
+            reward = evaluate(seed=args.seed*(i+1), env=target_env, mpc_dms=mpc_dms[BC_ID:BC_ID+1], DM=DM, target_a_dim=target_a_dim, action_projector=action_projector, state_projector=state_projector, agent=agent, agent_Q=agent_Q, num_BC=1, h=horizon, with_MPC=with_MPC, with_Q=with_Q)
+            # print(reward)
+            total += reward
+        avg = total / 10
+        avg_scores.append(avg)
+        print(f'BC {BC_ID}: {avg}')
+    print(f'avg. over 10 BC models: {sum(avg_scores) / num_BC}')
+    print(f'best BC: {max(avg_scores)}')
 
     total = 0
-    num_BC = len(mpc_dms)
     for i in range(10):
-        reward = evaluate(seed=args.seed*(i+1), env=target_env, mpc_dms=mpc_dms, DM=DM, target_a_dim=target_a_dim, action_projector=action_projector, state_projector=state_projector, agent=agent, agent_Q=agent_Q, num_BC=num_BC, h=1000, with_MPC=False, with_Q=False)
+        reward = evaluate(seed=args.seed*(i+1), env=target_env, mpc_dms=mpc_dms, DM=DM, target_a_dim=target_a_dim, action_projector=action_projector, state_projector=state_projector, agent=agent, agent_Q=agent_Q, num_BC=num_BC, h=horizon, with_MPC=with_MPC, with_Q=with_Q)
         total += reward
         print(f'{i}: {reward}')
 

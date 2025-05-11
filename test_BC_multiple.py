@@ -15,7 +15,8 @@ from stable_baselines3 import SAC
 target_env = "HalfCheetah-3legs"
 n_traj=10
 hidden_dim = 256
-env = "cheetah"
+seed = 2
+env = 'reacher'
 
 if env == "reacher":
     source_env = "Reacher-v4"
@@ -34,8 +35,6 @@ elif env == "cheetah":
 
 action_range = 10.0 if env=="reacher" else 1.0
 num_BC = 10
-seed = 7
-env = 'cheetah'
 avg_scores = []
 
 for BC_ID in range(num_BC):
@@ -45,6 +44,7 @@ for BC_ID in range(num_BC):
     mpc_dm = MPC_DM(target_s_dim, target_a_dim, 'cuda')
     # mpc_dm.mpc_policy_net.load_state_dict(torch.load( 'models_multiple/2_MPCModel.pth', map_location='cuda',weights_only=True))
     # mpc_dm.dynamic_model.load_state_dict(torch.load( f'models_test/7_DynamicModel.pth', weights_only=True, map_location='cuda' ))
+    print(f'models_multiple/{env}_{seed}/{seed}_MPCModel_{BC_ID}.pth')
     mpc_dm.mpc_policy_net.load_state_dict(torch.load( f'models_multiple/{env}_{seed}/{seed}_MPCModel_{BC_ID}.pth', map_location='cuda',weights_only=True))
     mpc_dm.dynamic_model.load_state_dict(torch.load( f'models_multiple/{env}_{seed}/{seed}_DynamicModel_{BC_ID}.pth', weights_only=True, map_location='cuda' ))
 
@@ -71,10 +71,10 @@ for BC_ID in range(num_BC):
             
             if done: break
 
-        print(f'{score:.0f}')
+        print(f'{score}')
         total_score += score
 
-    print(f'avg. score: {total_score/int(n_traj):.0f}')
+    print(f'avg. score: {total_score/int(n_traj)}')
     avg_scores.append(total_score/int(n_traj))
 
 print(f'avg. over all BC models: {sum(avg_scores) / len(avg_scores)}')

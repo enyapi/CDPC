@@ -15,7 +15,7 @@ from stable_baselines3 import SAC
 target_env = "HalfCheetah-3legs"
 n_traj=10
 hidden_dim = 256
-env = "cheetah"
+env = "reacher"
 
 if env == "reacher":
     source_env = "Reacher-v4"
@@ -36,15 +36,16 @@ action_range = 10.0 if env=="reacher" else 1.0
 
 # expert = SAC.load('models/cheetah/seed_7/HalfCheetah-3legs_SAC_3_128_200000_2.zip', device='cuda') # SB3
 expert = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, 'cuda').to('cuda')
-expert.load_state_dict(torch.load( 'models/cheetah/seed_2/2_cheetah_target.pth', map_location='cuda',weights_only=True ))
+expert.load_state_dict(torch.load( 'models/reacher/seed_7/7_reacher_target.pth', map_location='cuda',weights_only=True ))
 mpc_dm = MPC_DM(target_s_dim, target_a_dim, 'cuda')
 # mpc_dm.mpc_policy_net.load_state_dict(torch.load( 'models_multiple/2_MPCModel.pth', map_location='cuda',weights_only=True))
 # mpc_dm.dynamic_model.load_state_dict(torch.load( f'models_test/7_DynamicModel.pth', weights_only=True, map_location='cuda' ))
-mpc_dm.mpc_policy_net.load_state_dict(torch.load( 'models/cheetah/seed_7/expert_ratio_1.0/7_MPCModel.pth', map_location='cuda',weights_only=True))
-mpc_dm.dynamic_model.load_state_dict(torch.load( f'models/cheetah/seed_7/expert_ratio_1.0/7_DynamicModel.pth', weights_only=True, map_location='cuda' ))
+mpc_dm.mpc_policy_net.load_state_dict(torch.load( 'models/reacher/seed_7/expert_ratio_1.0/7_MPCModel.pth', map_location='cuda',weights_only=True))
+mpc_dm.dynamic_model.load_state_dict(torch.load( f'models/reacher/seed_7/expert_ratio_1.0/7_DynamicModel.pth', weights_only=True, map_location='cuda' ))
 
 env_target = gym.make(target_env)
 max_episode_steps = env_target.spec.max_episode_steps 
+
 
 total_score = 0
 for episode in range(int(n_traj)):
@@ -52,8 +53,8 @@ for episode in range(int(n_traj)):
     state, _ = env_target.reset(seed=3*episode) ############################################
     for _ in range(max_episode_steps):
         # action, _ = expert.predict(state, deterministic=True) # SB3
-        action = mpc_dm.mpc_policy_net(torch.tensor(state, device='cuda', dtype=torch.float))
-        # action = expert.get_action(torch.tensor(state, device='cpu', dtype=torch.float), deterministic=True)
+        # action = mpc_dm.mpc_policy_net(torch.tensor(state, device='cuda', dtype=torch.float))
+        action = expert.get_action(state, deterministic=True)
 
         next_state, reward, terminated, truncated, _ = env_target.step(action.tolist())
         done = truncated or terminated

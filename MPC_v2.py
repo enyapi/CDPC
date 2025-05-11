@@ -14,7 +14,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 def reacher_source_R(state, action):
     vec = state[-3:]#.detach().cpu().numpy()    # last 3 dim
     reward_dist = -torch.norm(vec)
-    reward_ctrl = -np.square(action).sum()
+    reward_ctrl = -torch.square(action).sum()
     reward = reward_dist + reward_ctrl 
     return reward 
 
@@ -359,8 +359,10 @@ class MPC(object):
 
             source_states = self.state_projector(target_states[:,i,:].squeeze(1))
             source_actions = self.action_projector(target_states[:,i,:], target_actions[:,i,:])
-            source_next_states = self.state_projector(target_states[:,i + 1,:].squeeze(1)) 
-            # source_next_states = torch.tensor(source_next_states, dtype=torch.float32).to(self.device)
+
+            if self.source_env == 'HalfCheetah-v4':
+                source_next_states = self.state_projector(target_states[:,i + 1,:].squeeze(1)) 
+                # source_next_states = torch.tensor(source_next_states, dtype=torch.float32).to(self.device)
 
             for b in range(self.batch_size):
                 if self.env == "reacher":

@@ -364,7 +364,7 @@ if __name__ == '__main__':
 
         for episode in range(1, args.ep+1):
             score = 0
-            state = env.reset(seed = args.seed)[0]
+            state = env.reset(seed = args.seed * episode)[0]
             for time_steps in range(max_episode_steps):
                 if random.uniform(0, 1) < 0.1: 
                     action = np.random.uniform(low=-1, high=1, size=(env.action_space.shape[0],))
