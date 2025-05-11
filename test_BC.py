@@ -40,8 +40,8 @@ expert.load_state_dict(torch.load( 'models/cheetah/seed_2/2_cheetah_target.pth',
 mpc_dm = MPC_DM(target_s_dim, target_a_dim, 'cuda')
 # mpc_dm.mpc_policy_net.load_state_dict(torch.load( 'models_multiple/2_MPCModel.pth', map_location='cuda',weights_only=True))
 # mpc_dm.dynamic_model.load_state_dict(torch.load( f'models_test/7_DynamicModel.pth', weights_only=True, map_location='cuda' ))
-mpc_dm.mpc_policy_net.load_state_dict(torch.load( 'models/cheetah/seed_2/expert_ratio_1.0/2_MPCModel.pth', map_location='cuda',weights_only=True))
-mpc_dm.dynamic_model.load_state_dict(torch.load( f'models/cheetah/seed_2/expert_ratio_1.0/2_DynamicModel.pth', weights_only=True, map_location='cuda' ))
+mpc_dm.mpc_policy_net.load_state_dict(torch.load( 'models/cheetah/seed_7/expert_ratio_1.0/7_MPCModel.pth', map_location='cuda',weights_only=True))
+mpc_dm.dynamic_model.load_state_dict(torch.load( f'models/cheetah/seed_7/expert_ratio_1.0/7_DynamicModel.pth', weights_only=True, map_location='cuda' ))
 
 env_target = gym.make(target_env)
 max_episode_steps = env_target.spec.max_episode_steps 

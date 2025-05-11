@@ -45,7 +45,7 @@ def __sampleTraj(state, mpc_dms, DM, target_a_dim, num_BC, h=50): ## 0.008s
 
     return traj_state, traj_action
 
-def __decodeTraj(s, a, action_projector:Action_Projector, state_projector:State_Projector, num_BC, h=50): ## 0.17
+def __decodeTraj(s, a, action_projector:Action_Projector, state_projector:State_Projector, agent, agent_Q, num_BC, h=50, with_Q=False): ## 0.17
 
     def make_env(seed):
         def _init():
@@ -84,14 +84,15 @@ def __decodeTraj(s, a, action_projector:Action_Projector, state_projector:State_
             rewards += r * (0.99 ** j)
 
         # add a value from value function
-        # actions = agent.get_action(states.cpu(), deterministic=True)
-        # rewards += (0.99 ** h) * agent_Q(states.cpu(), torch.tensor(actions)).cpu().detach().numpy().squeeze()
+        if with_Q:
+            actions = agent.get_action(torch.tensor(obs, dtype=torch.float), deterministic=True)
+            rewards += (0.99 ** h) * agent_Q(torch.tensor(obs, dtype=torch.float), torch.tensor(actions)).cpu().detach().numpy().squeeze()
 
         best_idx = np.argsort(rewards)[-1]
         best_action = a[best_idx, 0, :]
     return best_action, rewards[best_idx], best_idx
 
-def evaluate(seed, env, mpc_dms, DM, target_a_dim, action_projector, state_projector, num_BC=10, h=50, with_MPC=True):
+def evaluate(seed, env, mpc_dms, DM, target_a_dim, action_projector, state_projector, agent, agent_Q, num_BC=10, h=50, with_MPC=True, with_Q=False):
     env_target = gym.make(env, render_mode='rgb_array') #rgb_array
     #env_target = gym.wrappers.RecordVideo(env_target, 'video')
 
@@ -106,7 +107,7 @@ def evaluate(seed, env, mpc_dms, DM, target_a_dim, action_projector, state_proje
         if not with_MPC:
             if counter % h == 0:
                 states, actions = __sampleTraj(s0, mpc_dms, DM, target_a_dim, num_BC, h)
-                a0_target, best_reward, best_idx = __decodeTraj(states, actions, action_projector, state_projector, num_BC, h)
+                a0_target, best_reward, best_idx = __decodeTraj(states, actions, action_projector, state_projector, agent, agent_Q, num_BC, h)
                 a0_target = a0_target.cpu().detach().numpy()
                 counter = 1
             else:
@@ -115,7 +116,7 @@ def evaluate(seed, env, mpc_dms, DM, target_a_dim, action_projector, state_proje
                 counter += 1
         else:
             states, actions = __sampleTraj(s0, mpc_dms, DM, target_a_dim, num_BC, h)
-            a0_target, best_reward, best_idx = __decodeTraj(states, actions, action_projector, state_projector, num_BC, h)
+            a0_target, best_reward, best_idx = __decodeTraj(states, actions, action_projector, state_projector, agent, agent_Q, num_BC, h, with_Q)
             a0_target = a0_target.cpu().detach().numpy()
 
 
@@ -137,7 +138,7 @@ if __name__ == '__main__':
     parser.add_argument("MPC_pre_ep", type=int, nargs='?', default=10000)
     parser.add_argument("decoder_batch", type=int, nargs='?', default=32)
     parser.add_argument("--seed", type=int, nargs='?', default=2)
-    parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.2) # random_ratio=1-expert_ratio
+    parser.add_argument("--expert_ratio", type=float, nargs='?', default=1.0) # random_ratio=1-expert_ratio
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
     parser.add_argument("--env", type=str, nargs='?', default="cheetah") # cheetah reacher
     parser.add_argument("--use_flow", action='store_true', default=False)
@@ -195,12 +196,12 @@ if __name__ == '__main__':
     # load multiple mpcs
     mpc_dms = []
     DM = Dynamic_Model(target_s_dim + target_a_dim, target_s_dim).to('cuda')
-    DM.load_state_dict(torch.load( f'models_multiple/{str(args.seed)}_DynamicModel.pth', weights_only=True, map_location=args.device ))
+    DM.load_state_dict(torch.load( f'models_multiple/{args.env}_{str(args.seed)}/{str(args.seed)}_DynamicModel.pth', weights_only=True, map_location=args.device ))
     print("##### Loading MPC policy and Dynamic Model #####")
     for ith in range(num_BC):
         mpc_dm = MPC_DM(target_s_dim, target_a_dim, args.device)
-        mpc_dm.mpc_policy_net.load_state_dict(torch.load( f'models_multiple/{str(args.seed)}_MPCModel_{ith}.pth', weights_only=True, map_location=args.device ))
-        mpc_dm.dynamic_model.load_state_dict(torch.load( f'models_multiple/{str(args.seed)}_DynamicModel_{ith}.pth', weights_only=True, map_location=args.device ))
+        mpc_dm.mpc_policy_net.load_state_dict(torch.load( f'models_multiple/{args.env}_{str(args.seed)}/{str(args.seed)}_MPCModel_{ith}.pth', weights_only=True, map_location=args.device ))
+        mpc_dm.dynamic_model.load_state_dict(torch.load( f'models_multiple/{args.env}_{str(args.seed)}/{str(args.seed)}_DynamicModel_{ith}.pth', weights_only=True, map_location=args.device ))
         mpc_dms.append(mpc_dm)
     #---------------------------------------------------------------------------------------------------------------------
 
@@ -213,7 +214,7 @@ if __name__ == '__main__':
     total = 0
     num_BC = len(mpc_dms)
     for i in range(10):
-        reward = evaluate(seed=args.seed*(i+1), env=target_env, mpc_dms=mpc_dms, DM=DM, target_a_dim=target_a_dim, action_projector=action_projector, state_projector=state_projector, num_BC=num_BC, h=1000, with_MPC=False)
+        reward = evaluate(seed=args.seed*(i+1), env=target_env, mpc_dms=mpc_dms, DM=DM, target_a_dim=target_a_dim, action_projector=action_projector, state_projector=state_projector, agent=agent, agent_Q=agent_Q, num_BC=num_BC, h=1000, with_MPC=False, with_Q=False)
         total += reward
         print(f'{i}: {reward}')
 

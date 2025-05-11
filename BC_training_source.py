@@ -112,6 +112,7 @@ action_range = 10.0 if args.env=="reacher" else 1.0
 
 # agent_target = SAC.load('models/cheetah/seed_7/HalfCheetah-3legs_SAC_3_128_200000_2.zip', device=args.device) # SB3
 agent = PolicyNetwork(source_s_dim, source_a_dim, hidden_dim, action_range, args.device).to(args.device)
+# print( f'{location}{str(args.seed)}_{args.env}_source.pth' )
 agent.load_state_dict(torch.load( f'{location}{str(args.seed)}_{args.env}_source.pth', weights_only=True, map_location=args.device ))
 agent_medium = PolicyNetwork(source_s_dim, source_a_dim, hidden_dim, action_range, args.device).to(args.device)
 agent_medium.load_state_dict(torch.load( f'{location}{str(args.seed)}_{args.env}_source_medium.pth', weights_only=True, map_location=args.device ))

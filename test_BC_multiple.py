@@ -33,40 +33,50 @@ elif env == "cheetah":
     target_a_dim = 9
 
 action_range = 10.0 if env=="reacher" else 1.0
+num_BC = 10
+seed = 7
+env = 'cheetah'
+avg_scores = []
 
-# expert = SAC.load('models/cheetah/seed_7/HalfCheetah-3legs_SAC_3_128_200000_2.zip', device='cuda') # SB3
-expert = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, 'cuda').to('cuda')
-expert.load_state_dict(torch.load( 'models/cheetah/seed_2/2_cheetah_target.pth', map_location='cuda',weights_only=True ))
-mpc_dm = MPC_DM(target_s_dim, target_a_dim, 'cuda')
-# mpc_dm.mpc_policy_net.load_state_dict(torch.load( 'models_multiple/2_MPCModel.pth', map_location='cuda',weights_only=True))
-# mpc_dm.dynamic_model.load_state_dict(torch.load( f'models_test/7_DynamicModel.pth', weights_only=True, map_location='cuda' ))
-mpc_dm.mpc_policy_net.load_state_dict(torch.load( 'models_multiple/2_MPCModel_4.pth', map_location='cuda',weights_only=True))
-mpc_dm.dynamic_model.load_state_dict(torch.load( 'models_multiple/2_DynamicModel_4.pth', weights_only=True, map_location='cuda' ))
+for BC_ID in range(num_BC):
+    # expert = SAC.load('models/cheetah/seed_7/HalfCheetah-3legs_SAC_3_128_200000_2.zip', device='cuda') # SB3
+    # expert = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, 'cuda').to('cuda')
+    # expert.load_state_dict(torch.load( 'models/cheetah/seed_2/2_cheetah_target.pth', map_location='cuda',weights_only=True ))
+    mpc_dm = MPC_DM(target_s_dim, target_a_dim, 'cuda')
+    # mpc_dm.mpc_policy_net.load_state_dict(torch.load( 'models_multiple/2_MPCModel.pth', map_location='cuda',weights_only=True))
+    # mpc_dm.dynamic_model.load_state_dict(torch.load( f'models_test/7_DynamicModel.pth', weights_only=True, map_location='cuda' ))
+    mpc_dm.mpc_policy_net.load_state_dict(torch.load( f'models_multiple/{env}_{seed}/{seed}_MPCModel_{BC_ID}.pth', map_location='cuda',weights_only=True))
+    mpc_dm.dynamic_model.load_state_dict(torch.load( f'models_multiple/{env}_{seed}/{seed}_DynamicModel_{BC_ID}.pth', weights_only=True, map_location='cuda' ))
 
-env_target = gym.make(target_env)
-max_episode_steps = env_target.spec.max_episode_steps 
+    env_target = gym.make(target_env)
+    max_episode_steps = env_target.spec.max_episode_steps 
 
-total_score = 0
-for episode in range(int(n_traj)):
-    score = 0
-    state, _ = env_target.reset(seed=3*episode) ############################################
-    for _ in range(max_episode_steps):
-        # action, _ = expert.predict(state, deterministic=True) # SB3
-        action = mpc_dm.mpc_policy_net(torch.tensor(state, device='cuda', dtype=torch.float))
-        # action = expert.get_action(torch.tensor(state, device='cpu', dtype=torch.float), deterministic=True)
+    print(f'BC model: {BC_ID}')
+    total_score = 0
+    for episode in range(int(n_traj)):
+        score = 0
+        state, _ = env_target.reset(seed=3*episode) ############################################
+        for _ in range(max_episode_steps):
+            # action, _ = expert.predict(state, deterministic=True) # SB3
+            action = mpc_dm.mpc_policy_net(torch.tensor(state, device='cuda', dtype=torch.float))
+            # action = expert.get_action(torch.tensor(state, device='cpu', dtype=torch.float), deterministic=True)
 
-        next_state, reward, terminated, truncated, _ = env_target.step(action.tolist())
-        done = truncated or terminated
+            next_state, reward, terminated, truncated, _ = env_target.step(action.tolist())
+            done = truncated or terminated
 
-        done_mask = 0.0 if done else 1.0
+            done_mask = 0.0 if done else 1.0
 
-        state = next_state
-        score += reward
-        
-        if done: break
+            state = next_state
+            score += reward
+            
+            if done: break
 
-    print(f'{score:.0f}')
-    total_score += score
+        print(f'{score:.0f}')
+        total_score += score
 
-print(f'avg. score: {total_score/int(n_traj):.0f}')
+    print(f'avg. score: {total_score/int(n_traj):.0f}')
+    avg_scores.append(total_score/int(n_traj))
+
+print(f'avg. over all BC models: {sum(avg_scores) / len(avg_scores)}')
+print(f'best avg. score: {max(avg_scores)}')
 env_target.close()

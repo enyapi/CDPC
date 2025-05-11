@@ -10,7 +10,7 @@ from stable_baselines3 import SAC
 from sac_v2 import PolicyNetwork, SoftQNetwork
 from MPC_DM_model import ReplayBuffer, MPC_DM
 # from sac_v2 import ReplayBuffer
-from MPC import ReplayBuffer_traj, MPC
+from MPC_v2 import ReplayBuffer_traj, MPC
 
 if __name__ == '__main__':
     
@@ -18,11 +18,11 @@ if __name__ == '__main__':
     parser.add_argument("MPC_pre_ep", type=int, nargs='?', default=10000)
     parser.add_argument("decoder_batch", type=int, nargs='?', default=32)
     parser.add_argument("--seed", type=int, nargs='?', default=2)
-    parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.2) # random_ratio=1-expert_ratio
+    parser.add_argument("--expert_ratio", type=float, nargs='?', default=1.0) # random_ratio=1-expert_ratio
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
     parser.add_argument("--env", type=str, nargs='?', default="cheetah") # cheetah reacher
     parser.add_argument("--use_flow", action='store_true', default=False)
-    parser.add_argument("--trained_MPC", type=bool, nargs='?', default=False)
+    parser.add_argument("--trained_MPC", type=bool, nargs='?', default=True)
     parser.add_argument("--horizon", type=int, nargs='?', default=20)
     
     args = parser.parse_args()
@@ -98,6 +98,8 @@ if __name__ == '__main__':
         "use_flow": args.use_flow
     }
     mpc = MPC(h=args.horizon, load_decoder = True, **params)
+    mpc.action_projector.load_state_dict(torch.load('models/cheetah/seed_2/expert_ratio_1.0/2_action_projector_200.pth', weights_only=True, map_location=args.device))
+    mpc.state_projector.load_state_dict(torch.load('models/cheetah/seed_2/expert_ratio_1.0/2_state_projector_200.pth', weights_only=True, map_location=args.device))
     
     print(f'trained_MPC: {args.trained_MPC} horizon: {args.horizon}')
 

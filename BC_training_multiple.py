@@ -101,11 +101,12 @@ for i in range(args.MPC_pre_ep):
     print(f'epoch {i} done.')
 
 os.makedirs('./models_multiple/', exist_ok=True)
+os.makedirs(f'./models_multiple/{args.env}_{str(args.seed)}', exist_ok=True)
 
 for ith in range(num_BC):
-    torch.save(mpc_dms[ith].mpc_policy_net.state_dict(), f'models_multiple/{str(args.seed)}_MPCModel_{ith}.pth')
-    torch.save(mpc_dms[ith].dynamic_model.state_dict(), f'models_multiple/{str(args.seed)}_DynamicModel_{ith}.pth')
+    torch.save(mpc_dms[ith].mpc_policy_net.state_dict(), f'models_multiple/{args.env}_{str(args.seed)}/{str(args.seed)}_MPCModel_{ith}.pth')
+    torch.save(mpc_dms[ith].dynamic_model.state_dict(), f'models_multiple/{args.env}_{str(args.seed)}/{str(args.seed)}_DynamicModel_{ith}.pth')
 
-torch.save(mpc_dm_for_transition.mpc_policy_net.state_dict(), f'models_multiple/{str(args.seed)}_MPCModel.pth')
-torch.save(mpc_dm_for_transition.dynamic_model.state_dict(), f'models_multiple/{str(args.seed)}_DynamicModel.pth')
+torch.save(mpc_dm_for_transition.mpc_policy_net.state_dict(), f'models_multiple/{args.env}_{str(args.seed)}/{str(args.seed)}_MPCModel.pth')
+torch.save(mpc_dm_for_transition.dynamic_model.state_dict(), f'models_multiple/{args.env}_{str(args.seed)}/{str(args.seed)}_DynamicModel.pth')
 

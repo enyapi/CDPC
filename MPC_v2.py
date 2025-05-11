@@ -190,7 +190,7 @@ class MPC(object):
         self.state_discriminator = Discriminator(self.source_state_space_dim).to(self.device)
         self.action_discriminator = Discriminator(self.source_action_space_dim).to(self.device)
         
-        self.projectors_optimizer = optim.Adam(list(self.state_projector.parameters()) + list(self.action_projector.parameters()), lr=self.lr)
+        self.projectors_optimizer = optim.Adam(list(self.state_projector.parameters()) + list(self.action_projector.parameters()), lr=4*self.lr)
         # self.ap_optimizer = optim.Adam(self.action_projector.parameters(), lr=self.lr)
         self.sd_optimizer = optim.Adam(self.state_discriminator.parameters(), lr=self.lr)
         self.ad_optimizer = optim.Adam(self.action_discriminator.parameters(), lr=self.lr)
@@ -198,6 +198,13 @@ class MPC(object):
         # mpc policy net
         self.mpc_policy_net = self.mpc_dm.mpc_policy_net
         self.dynamics_model = self.mpc_dm.dynamic_model
+
+        self.update_freq_D = 3
+
+        # if to_update_D is 0 -> update D
+        self.to_update_D = 0
+        self.adv_state_loss_for_D = None
+        self.adv_action_loss_for_D = None
 
 
     # def learn(self, train_set):
@@ -245,18 +252,14 @@ class MPC(object):
         source_state, source_action, source_reward, source_next_state, source_done = source_buffer.sample(batch_size=self.batch_size)
         target_state, target_action, target_reward, target_next_state, target_done = target_buffer.sample(batch_size=self.batch_size)
 
-        adv_state_loss_for_D, adv_action_loss_for_D = self.adversarial_loss_D(target_state, target_action, source_state, source_action)
+        if self.to_update_D == 0:
+            adv_state_loss_for_D, adv_action_loss_for_D = self.update_D(target_state, target_action, source_state, source_action)
+            self.adv_state_loss_for_D, self.adv_action_loss_for_D = adv_state_loss_for_D, adv_action_loss_for_D
+            
+        self.to_update_D = (self.to_update_D + 1) % self.update_freq_D
+
+        # dcc loss
         dcc_loss = self.dcc_loss(target_state, target_action, target_next_state)
-
-        # optimize state discriminator
-        self.sd_optimizer.zero_grad()
-        adv_state_loss_for_D.backward()
-        self.sd_optimizer.step()
-
-        # optimize action discriminator
-        self.ad_optimizer.zero_grad()
-        adv_action_loss_for_D.backward()
-        self.ad_optimizer.step()
 
         # optimize state projectors
         adv_state_loss_for_G, adv_action_loss_for_G = self.adversarial_loss_G(target_state, target_action)
@@ -266,7 +269,7 @@ class MPC(object):
         projectors_loss.backward()
         self.projectors_optimizer.step()
 
-        return dcc_loss.item(), adv_state_loss_for_D.item(), adv_action_loss_for_D.item(), adv_state_loss_for_G.item(), adv_action_loss_for_G.item(), loss_pref.item(), pref_acc
+        return dcc_loss.item(), self.adv_state_loss_for_D, self.adv_action_loss_for_D, adv_state_loss_for_G.item(), adv_action_loss_for_G.item(), loss_pref.item(), pref_acc
     
     
     def make_env(self, seed):
@@ -279,6 +282,19 @@ class MPC(object):
             return env
         return _init
     
+    def update_D(self, target_state, target_action, source_state, source_action):
+        adv_state_loss_for_D, adv_action_loss_for_D = self.adversarial_loss_D(target_state, target_action, source_state, source_action)
+        # optimize state discriminator
+        self.sd_optimizer.zero_grad()
+        adv_state_loss_for_D.backward()
+        self.sd_optimizer.step()
+
+        # optimize action discriminator
+        self.ad_optimizer.zero_grad()
+        adv_action_loss_for_D.backward()
+        self.ad_optimizer.step()
+
+        return adv_state_loss_for_D.item(), adv_action_loss_for_D.item()
 
     def adversarial_loss_D(self, target_state, target_action, source_state, source_action):
 
@@ -295,11 +311,11 @@ class MPC(object):
         fake_action_score = self.action_discriminator(fake_source_action)
         real_action_score = self.action_discriminator(source_action)
 
-        state_loss_for_D = (loss_function(real_state_score, torch.ones(real_state_score.shape, device=real_state_score.device)) + \
-                            loss_function(fake_state_score, torch.zeros(fake_state_score.shape, device=fake_state_score.device))) / 2.
+        state_loss_for_D = (loss_function(real_state_score, torch.randn(real_state_score.shape, device=real_state_score.device) * .05 + torch.ones(real_state_score.shape, device=real_state_score.device)) + \
+                            loss_function(fake_state_score, torch.randn(fake_state_score.shape, device=fake_state_score.device) * .05 + torch.zeros(fake_state_score.shape, device=fake_state_score.device))) / 2.
         
-        action_loss_for_D = (loss_function(real_action_score, torch.ones(real_action_score.shape, device=real_action_score.device)) + \
-                             loss_function(fake_action_score, torch.zeros(fake_action_score.shape, device=fake_action_score.device))) / 2.
+        action_loss_for_D = (loss_function(real_action_score, torch.randn(real_action_score.shape, device=real_action_score.device) * .05 + torch.ones(real_action_score.shape, device=real_action_score.device)) + \
+                             loss_function(fake_action_score, torch.randn(fake_action_score.shape, device=fake_action_score.device) * .05 + torch.zeros(fake_action_score.shape, device=fake_action_score.device))) / 2.
         
         return state_loss_for_D, action_loss_for_D
     
@@ -314,8 +330,8 @@ class MPC(object):
         fake_state_score = self.state_discriminator(fake_source_state)
         fake_action_score = self.action_discriminator(fake_source_action)
 
-        state_loss_for_G = loss_function(fake_state_score, torch.ones(fake_state_score.shape, device=fake_state_score.device))
-        action_loss_for_G = loss_function(fake_action_score, torch.ones(fake_action_score.shape, device=fake_action_score.device))
+        state_loss_for_G = loss_function(fake_state_score, torch.randn(fake_state_score.shape, device=fake_state_score.device) * .05 + torch.ones(fake_state_score.shape, device=fake_state_score.device))
+        action_loss_for_G = loss_function(fake_action_score, torch.randn(fake_action_score.shape, device=fake_action_score.device) * .05 + torch.ones(fake_action_score.shape, device=fake_action_score.device))
 
         return state_loss_for_G, action_loss_for_G
 
