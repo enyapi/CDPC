@@ -55,56 +55,6 @@ class ReplayBuffer_traj():
         return len(self.buffer)
     
         
-class BidirectionalLSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers, num_directions=2):
-        super(BidirectionalLSTM, self).__init__()
-        self.num_directions = num_directions
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers=num_layers, bidirectional=False, batch_first=True)
-
-    def forward(self, x, h):
-        # x: (batch_size, seq_len, input_size)
-        out, h = self.lstm(x, h)
-        # out: (batch_size, seq_len, num_directions * hidden_size)
-        return out, h
-    
-
-class Decoder_Net(nn.Module):
-    def __init__(self, input_size, output_size, batch_size, device, use_flow):
-        super(Decoder_Net, self).__init__()
-        self.batch_size = batch_size
-        self.hidden_size = 128
-        self.num_layers = 1
-        self.lstm = BidirectionalLSTM(input_size, self.hidden_size, num_layers=self.num_layers)
-        self.dropout = nn.Dropout(p=0.1)
-        self.fc1 = nn.Linear(self.hidden_size, 64)  
-        self.fc2 = nn.Linear(64, output_size)
-        self.random_hidden = ((torch.randn(self.num_layers, self.batch_size, self.hidden_size) * 0.01 + 0.0).to(device), (torch.randn(self.num_layers, batch_size, self.hidden_size)*0.001).to(device))
-        self.hidden = self.random_hidden
-        self.device = device
-        self.use_flow = use_flow
-
-
-    def forward(self, x):
-        out, self.hidden = self.lstm(x.unsqueeze(1), self.hidden)
-        out = self.dropout(out)
-        out = self.fc1(out)
-        out = self.fc2(out[:, -1, :])
-
-        if self.use_flow:
-            out = F.tanh(out)
-        
-        return out
-
-    def reset_hidden(self, batch_size, flag=False):
-        if not flag:
-            self.hidden = ((torch.randn(self.num_layers, batch_size, self.hidden_size) * 0.01 + 0.0).to(self.device), (torch.randn(self.num_layers, batch_size, self.hidden_size)*0.001).to(self.device))
-        else:
-            self.hidden = ((torch.randn(self.num_layers, batch_size, self.hidden_size) * 0.01 + 0.0).to(self.device), (torch.randn(self.num_layers, batch_size, self.hidden_size)*0.001).to(self.device))
-            return self.hidden
-        
 class State_Projector(nn.Module):
     def __init__(self, input_size, output_size, hidden_size=256):
         super().__init__()

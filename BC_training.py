@@ -120,7 +120,7 @@ train_set, buffer, buffer_expert_only = collect_target_data(agent_target, agent_
 
 mpc_dm = MPC_DM(target_s_dim, target_a_dim, args.device)
 
-batch_size=512
+batch_size=128
 print('start training...')
 
 for i in range(args.MPC_pre_ep):

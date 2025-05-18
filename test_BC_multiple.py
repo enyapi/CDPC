@@ -15,7 +15,7 @@ from stable_baselines3 import SAC
 target_env = "HalfCheetah-3legs"
 n_traj=10
 hidden_dim = 256
-seed = 2
+seed = 7
 env = 'reacher'
 
 if env == "reacher":
@@ -55,7 +55,7 @@ for BC_ID in range(num_BC):
     total_score = 0
     for episode in range(int(n_traj)):
         score = 0
-        state, _ = env_target.reset(seed=3*episode) ############################################
+        state, _ = env_target.reset(seed=seed * (episode+1)) ############################################
         for _ in range(max_episode_steps):
             # action, _ = expert.predict(state, deterministic=True) # SB3
             action = mpc_dm.mpc_policy_net(torch.tensor(state, device='cuda', dtype=torch.float))

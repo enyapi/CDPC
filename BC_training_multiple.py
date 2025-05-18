@@ -28,7 +28,7 @@ def load_buffer(filename):
 def split_buffer(buffer:ReplayBuffer, num_BC, device):
     buffer_maxlen = 1000000
     sub_buffers = [ReplayBuffer(buffer_maxlen, device) for i in range(num_BC)]
-
+    
     for i in range(len(buffer.buffer)):
         sub_buffers[i % num_BC].push(buffer.buffer[i])
 
@@ -79,19 +79,12 @@ if os.path.exists(target_buffer_path):
     buffer = load_buffer(target_buffer_path)
 buffers = split_buffer(buffer, args.num_BC, args.device)
 
-# agent_target = SAC.load('models/cheetah/seed_7/HalfCheetah-3legs_SAC_3_128_200000_2.zip', device=args.device) # SB3
-agent_target = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, args.device).to(args.device)
-agent_target.load_state_dict(torch.load( f'{location}{str(args.seed)}_{args.env}_target.pth', weights_only=True, map_location=args.device ))
-
-# agent_target_medium = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, args.device).to(args.device)
-# agent_target_medium.load_state_dict(torch.load( f'{location}{str(args.seed)}_{args.env}_target_medium.pth', weights_only=True, map_location=args.device ))
-
 num_BC = args.num_BC
 
 mpc_dms = [MPC_DM(target_s_dim, target_a_dim, args.device) for i in range(num_BC)]
 mpc_dm_for_transition = MPC_DM(target_s_dim, target_a_dim, args.device)
 
-batch_size=128
+batch_size=512
 print('start training...')
 
 for i in range(args.MPC_pre_ep):
