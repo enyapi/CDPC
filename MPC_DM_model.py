@@ -141,13 +141,12 @@ class MPC_DM:
         
         return loss_mpc, loss_dm
     
-    def evaluate_policy(self, env, seed, eval_episode=10):
+    def evaluate_policy(self, env, seed):
         total_reward = 0.0
-        for ep in range(eval_episode):
-            state, _ = env.reset(seed=seed*ep)
-            for i in range(env.spec.max_episode_steps):
-                state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device)
-                action = self.mpc_policy_net(state).cpu().detach().numpy().squeeze(0)
-                state, reward, terminated, truncated, _ = env.step(action)
-                total_reward += reward
-        return total_reward / eval_episode
+        state, _ = env.reset(seed=seed)
+        for i in range(env.spec.max_episode_steps):
+            state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device)
+            action = self.mpc_policy_net(state).cpu().detach().numpy().squeeze(0)
+            state, reward, terminated, truncated, _ = env.step(action)
+            total_reward += reward
+        return total_reward

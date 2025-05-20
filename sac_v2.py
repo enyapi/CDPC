@@ -261,24 +261,20 @@ class SAC():
     def evaluate(self, eval_episode=10):
         print("==============================================")
         print("Evaluating...")
-        all_rewards = []
-        for i in range(eval_episode):
-            score = 0
-            state = self.test_env.reset(seed = self.args.seed * i)[0]
-            for _ in range(self.test_env.spec.max_episode_steps):
-                action = self.policy_net.get_action(state, deterministic = True)
-                next_state, reward, terminated, truncated, _ = self.test_env.step(action)
-                done = truncated or terminated
-                
-                score += reward
-                if done: break
-                state = next_state
+        score = 0
+        state = self.test_env.reset(seed = self.args.seed)[0]
+        for _ in range(self.test_env.spec.max_episode_steps):
+            action = self.policy_net.get_action(state, deterministic = True)
+            next_state, reward, terminated, truncated, _ = self.test_env.step(action)
+            done = truncated or terminated
+            
+            score += reward
+            if done: break
+            state = next_state
 
-            all_rewards.append(score)
-        avg = sum(all_rewards) / eval_episode
-        print(f"average score: {avg}")
+        print(f"average score: {score}")
         print("==============================================")
-        return avg
+        return score
 
 
 if __name__ == '__main__':

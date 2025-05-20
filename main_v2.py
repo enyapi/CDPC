@@ -14,8 +14,7 @@ warnings.filterwarnings('ignore')
 def CDPC(mpc, train_set, target_buffer, source_buffer, mpc_location, Is_wandb):
     Return_val = []
     # val state decoder
-    # total_reward = mpc.evaluate() 
-    total_reward = 0
+    total_reward = mpc.evaluate() 
     if Is_wandb:
         wandb.log({"cdpc episode": 0, "valid/reward": total_reward, })
 
@@ -37,7 +36,7 @@ def CDPC(mpc, train_set, target_buffer, source_buffer, mpc_location, Is_wandb):
         print(f'episode: {j}, dcc loss: {np.mean(loss_dcc_list)}, pref loss: {np.mean(loss_pref_list)}, pref acc: {pref_acc}')
 
         # val state decoder
-        eval_freq = 100
+        eval_freq = 10
         if j % eval_freq == 0:
             total_reward = mpc.evaluate() 
             print(f'episode: {j}, avg. validation reward: {total_reward}')
