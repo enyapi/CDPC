@@ -36,12 +36,14 @@ class ReplayBuffer_traj():
     def __init__(self):
         self.buffer = []
 
-    def push(self, total_rewards, state, action, next_state):
+    def push(self, total_rewards, states, actions, next_states, rewards, dones):
         trajectory_info = {
         'total_rewards': total_rewards,
-        'state': state,
-        'action': action, 
-        'next_state': next_state,
+        'states': states,
+        'actions': actions, 
+        'next_states': next_states,
+        'rewards': rewards,
+        'dones': dones
         }
         self.buffer.append(trajectory_info)
 
@@ -169,12 +171,12 @@ class MPC(object):
             traj_a, traj_b = self.compare_trajectories(traj_a, traj_b)
             # if random.random() < 0.1: traj_a, traj_b = traj_b, traj_a
 
-            state_a_tensor = torch.tensor(traj_a['state'], dtype=torch.float32)
-            next_state_a_tensor = torch.tensor(traj_a['next_state'], dtype=torch.float32)
-            action_a_tensor = torch.tensor(traj_a['action'], dtype=torch.float32)
-            state_b_tensor = torch.tensor(traj_b['state'], dtype=torch.float32)
-            action_b_tensor = torch.tensor(traj_b['action'], dtype=torch.float32)
-            next_state_b_tensor = torch.tensor(traj_b['next_state'], dtype=torch.float32)
+            state_a_tensor = torch.tensor(traj_a['states'], dtype=torch.float32)
+            next_state_a_tensor = torch.tensor(traj_a['next_states'], dtype=torch.float32)
+            action_a_tensor = torch.tensor(traj_a['actions'], dtype=torch.float32)
+            state_b_tensor = torch.tensor(traj_b['states'], dtype=torch.float32)
+            action_b_tensor = torch.tensor(traj_b['actions'], dtype=torch.float32)
+            next_state_b_tensor = torch.tensor(traj_b['next_states'], dtype=torch.float32)
 
             state_a.append(state_a_tensor)
             action_a.append(action_a_tensor)

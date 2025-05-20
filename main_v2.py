@@ -114,23 +114,8 @@ if __name__ == '__main__':
 
     ##### 1 Loading source domain policy #####
     print("##### Loading source domain policy #####")
-    #agent = SAC.load(f'./experiments/{args.env}_source_18/models/final_model.zip', device=args.device) # SB3
     agent_source = PolicyNetwork(source_s_dim, source_a_dim, hidden_dim, action_range, args.device).to(args.device)
     agent_source.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_source.pth', map_location=args.device ))
-    agent_source_medium = PolicyNetwork(source_s_dim, source_a_dim, hidden_dim, action_range, args.device).to(args.device)
-    agent_source_medium.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_source_medium.pth', map_location=args.device ))
-    # agent_Q = SoftQNetwork(source_s_dim, source_a_dim, hidden_dim)
-    # agent_Q.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_source_Q_function.pth', map_location=args.device ))
-
-    ##### 2 Loading target domain expert policy #####
-    print("##### Loading target domain expert policy #####")
-    # agent_target = SAC.load('models/cheetah/seed_7/HalfCheetah-3legs_SAC_3_128_200000_2.zip', device=args.device) # SB3
-    agent_target = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, args.device).to(args.device)
-    agent_target_medium = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, args.device).to(args.device)
-    # target_Q = SoftQNetwork(target_s_dim, target_a_dim, hidden_dim).to(args.device)
-    agent_target.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_target.pth', map_location=args.device ))
-    agent_target_medium.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_target_medium.pth', map_location=args.device ))
-    # target_Q.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_target_Q_function.pth', map_location=args.device ))
 
     ##### 3 Collecting target domain data #####
     print("##### Collecting target domain data #####")

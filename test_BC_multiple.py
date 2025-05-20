@@ -15,7 +15,7 @@ from stable_baselines3 import SAC
 target_env = "HalfCheetah-3legs"
 n_traj=10
 hidden_dim = 256
-seed = 7
+seed = 11
 env = 'reacher'
 
 if env == "reacher":

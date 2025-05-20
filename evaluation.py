@@ -98,8 +98,8 @@ if __name__ == '__main__':
         "use_flow": args.use_flow
     }
     mpc = MPC(h=args.horizon, load_decoder = True, **params)
-    mpc.action_projector.load_state_dict(torch.load('models/reacher/seed_7/expert_ratio_1.0/7_action_projector_500.pth', weights_only=True, map_location=args.device))
-    mpc.state_projector.load_state_dict(torch.load('models/reacher/seed_7/expert_ratio_1.0/7_state_projector_500.pth', weights_only=True, map_location=args.device))
+    mpc.action_projector.load_state_dict(torch.load('models/reacher/seed_2/expert_ratio_0.8/2_action_projector_500.pth', weights_only=True, map_location=args.device))
+    mpc.state_projector.load_state_dict(torch.load('models/reacher/seed_2/expert_ratio_0.8/2_state_projector_500.pth', weights_only=True, map_location=args.device))
     
     print(f'trained_MPC: {args.trained_MPC} horizon: {args.horizon}')
 

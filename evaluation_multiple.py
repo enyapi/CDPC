@@ -135,8 +135,6 @@ def evaluate(seed, env, mpc_dms, DM, target_a_dim, action_projector, state_proje
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("MPC_pre_ep", type=int, nargs='?', default=10000)
-    parser.add_argument("decoder_batch", type=int, nargs='?', default=32)
     parser.add_argument("--seed", type=int, nargs='?', default=2)
     parser.add_argument("--expert_ratio", type=float, nargs='?', default=1.0) # random_ratio=1-expert_ratio
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
@@ -208,11 +206,11 @@ if __name__ == '__main__':
     action_projector = Action_Projector(target_s_dim, target_a_dim, source_a_dim).to(args.device)
     state_projector = State_Projector(target_s_dim, source_s_dim).to(args.device)
 
-    action_projector.load_state_dict(torch.load(f'models/{args.env}/seed_{str(args.seed)}/expert_ratio_1.0/{str(args.seed)}_action_projector_500.pth', weights_only=True, map_location='cuda'))
-    state_projector.load_state_dict(torch.load(f'models/{args.env}/seed_{str(args.seed)}/expert_ratio_1.0/{str(args.seed)}_state_projector_500.pth', weights_only=True, map_location='cuda'))
+    action_projector.load_state_dict(torch.load(f'models/{args.env}/seed_{str(args.seed)}/expert_ratio_{args.expert_ratio}/{str(args.seed)}_action_projector_500.pth', weights_only=True, map_location='cuda'))
+    state_projector.load_state_dict(torch.load(f'models/{args.env}/seed_{str(args.seed)}/expert_ratio_{args.expert_ratio}/{str(args.seed)}_state_projector_500.pth', weights_only=True, map_location='cuda'))
 
     num_BC = len(mpc_dms)
-    horizon = 50
+    horizon = 5
     with_MPC = False
     with_Q = False
 
