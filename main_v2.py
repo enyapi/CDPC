@@ -12,13 +12,10 @@ from utils import seed_everything, load_buffer
 warnings.filterwarnings('ignore')
 
 def CDPC(mpc, train_set, target_buffer, source_buffer, mpc_location, Is_wandb):
-    Return_val = []
     # val state decoder
     total_reward = mpc.evaluate() 
     if Is_wandb:
         wandb.log({"cdpc episode": 0, "valid/reward": total_reward, })
-
-    Return_val.append(total_reward)
     print(f'episode: {0}, validation reward: {total_reward}')
     
     for j in range(1, args.num_ep+1):
@@ -34,16 +31,8 @@ def CDPC(mpc, train_set, target_buffer, source_buffer, mpc_location, Is_wandb):
             loss_pref_list.append(loss_pref)
 
         print(f'episode: {j}, dcc loss: {np.mean(loss_dcc_list)}, pref loss: {np.mean(loss_pref_list)}, pref acc: {pref_acc}')
-
-        # val state decoder
-        eval_freq = 10
-        if j % eval_freq == 0:
-            total_reward = mpc.evaluate() 
-            print(f'episode: {j}, avg. validation reward: {total_reward}')
-        Return_val.append(total_reward)
         if Is_wandb:
             wandb.log({"cdpc episode": j,
-                    "valid/reward": total_reward, 
                     "train/dcc loss": np.mean(loss_dcc_list),
                     "train/pref loss": np.mean(loss_pref_list),
                     "train/state D loss": np.mean(adv_state_loss_D_list),
@@ -52,6 +41,14 @@ def CDPC(mpc, train_set, target_buffer, source_buffer, mpc_location, Is_wandb):
                     "train/action G loss": np.mean(adv_action_loss_G_list),
                     "train/pref acc": pref_acc,
                     })
+
+        # val state decoder
+        eval_freq = 10
+        if j % eval_freq == 0:
+            total_reward = mpc.evaluate() 
+            print(f'episode: {j}, avg. validation reward: {total_reward}')
+            if Is_wandb:
+                wandb.log({"cdpc episode": j, "test/reward": total_reward,})
             
         torch.save(mpc.state_projector.state_dict(), f'{mpc_location}/{str(mpc.seed)}_state_projector_{args.num_ep}.pth')
         torch.save(mpc.action_projector.state_dict(), f'{mpc_location}/{str(mpc.seed)}_action_projector_{args.num_ep}.pth')     
@@ -102,8 +99,8 @@ if __name__ == '__main__':
     agent_source.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_source.pth', map_location=args.device ))
 
 
-    ##### 2 Collecting target domain data #####
-    print("##### Collecting target domain data #####")
+    ##### 2 Loading target domain data #####
+    print("##### Loading target domain data #####")
     data_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}.pkl'
     target_buffer_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_target_buffer.pkl'
     target_buffer_expert_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_target_buffer_expert.pkl'
@@ -120,9 +117,9 @@ if __name__ == '__main__':
 
 
     ##### 3 Loading MPC policy and Dynamic Model #####
+    print("##### Loading MPC policy and Dynamic Model #####")
     mpc_dm = MPC_DM(target_s_dim, target_a_dim, args.device)
     source_dynamics_model = Dynamic_Model(source_s_dim + source_a_dim, source_s_dim).to(args.device)
-    print("##### Loading MPC policy and Dynamic Model #####")
     mpc_dm.mpc_policy_net.load_state_dict(torch.load( f'{mpc_location}/{str(args.seed)}_MPCModel.pth', map_location=args.device ))
     mpc_dm.dynamic_model.load_state_dict(torch.load( f'{mpc_location}/{str(args.seed)}_DynamicModel.pth', map_location=args.device ))
     source_dynamics_model.load_state_dict(torch.load( f'{mpc_location}/{str(args.seed)}_DynamicModel_source.pth', map_location=args.device ))
