@@ -20,70 +20,13 @@ def seed_everything(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False  
 
-def collect_data(agent_expert, agent_medium, env, n_traj, expert_ratio, device, seed):
-    buffer_maxlen = 1000000
-    buffer = ReplayBuffer(buffer_maxlen, device)
-    buffer_expert_only = ReplayBuffer(buffer_maxlen, device)
-    train_set = ReplayBuffer_traj()
-
-    if env == "HalfCheetah-v4":
-        env = gym.make(env, exclude_current_positions_from_observation=False)
-    else:
-        env = gym.make(env)
-
-    max_episode_steps = env.spec.max_episode_steps 
-    for episode in range(int(n_traj)):
-        score = 0
-        state, _ = env.reset(seed=seed*episode) ############################################
-        state_list = []
-        action_list = []
-        next_state_list = []
-        for _ in range(max_episode_steps):
-            if episode < int(n_traj*expert_ratio):
-                if episode % 2 == 0:
-                    # action, _ = agent_target.predict(state, deterministic=True) # SB3
-                    action = agent_expert.get_action(state, deterministic=True)
-                else:
-                    action = agent_medium.get_action(state, deterministic=True)
-            else:
-                action = np.random.uniform(low=-1, high=1, size=(env.action_space.shape[0],))
-                
-            next_state, reward, terminated, truncated, _ = env.step(action)
-            done = truncated or terminated
-
-            done_mask = 0.0 if done else 1.0
-            buffer.push((state, action, reward, next_state, done_mask))
-
-            if episode < int(n_traj*expert_ratio):
-                buffer_expert_only.push((state, action, reward, next_state, done_mask))
-
-            state_list.append(state)
-            action_list.append(action)
-            next_state_list.append(next_state)
-            state = next_state
-            score += reward
-            
-            if done: break
-
-        train_set.push(score, state_list, action_list, next_state_list)
-        print("episode:{}, Return:{}, buffer_capacity:{}".format(episode, score, buffer.buffer_len()))
-    env.close()
-    
-    print(f"Collected {n_traj} trajectories.")
-    print(f"Collected {n_traj*max_episode_steps} transitions.")
-    return train_set, buffer, buffer_expert_only
-
 parser = argparse.ArgumentParser()
 parser.add_argument("MPC_pre_ep", type=int, nargs='?', default=2000)
-parser.add_argument("decoder_batch", type=int, nargs='?', default=32)
 parser.add_argument("--seed", type=int, nargs='?', default=7)
-parser.add_argument("--n_traj", type=int, nargs='?', default=20) # 1000/10000
 parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.2) # random_ratio=1-expert_ratio
-parser.add_argument("--decoder_ep", type=int, nargs='?', default=500) # 500/200
 parser.add_argument("--device", type=str, nargs='?', default="cuda")
 parser.add_argument("--env", type=str, nargs='?', default="cheetah") # cheetah reacher
 parser.add_argument("--wandb", action='store_true', default=True)
-parser.add_argument("--use_flow", action='store_true', default=False)
 
 args = parser.parse_args()
 seed_everything(args.seed)
@@ -117,11 +60,11 @@ agent.load_state_dict(torch.load( f'{location}{str(args.seed)}_{args.env}_source
 agent_medium = PolicyNetwork(source_s_dim, source_a_dim, hidden_dim, action_range, args.device).to(args.device)
 agent_medium.load_state_dict(torch.load( f'{location}{str(args.seed)}_{args.env}_source_medium.pth', weights_only=True, map_location=args.device ))
 
-train_set, buffer, buffer_expert_only = collect_data(agent, agent_medium, source_env, args.n_traj, args.expert_ratio, args.device, args.seed)
+source_buffer_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_source_buffer_expert.pkl'
 
-# import pickle
-# with open('train_set/7_cheetah_1.0_buffer.pkl', 'rb') as f:
-#     buffer = pickle.load(f)
+import pickle
+with open(source_buffer_path, 'rb') as f:
+    buffer = pickle.load(f)
 
 mpc_dm = MPC_DM(source_s_dim, source_a_dim, args.device)
 

@@ -4,12 +4,29 @@ import random
 import numpy as np
 import argparse
 import os
-import wandb
-from sac_v2 import PolicyNetwork
 from MPC_DM_model import ReplayBuffer, MPC_DM
-from MPC import ReplayBuffer_traj, MPC
-from stable_baselines3 import SAC
+from MPC_v2 import ReplayBuffer_traj
 import pickle
+import random
+
+def get_top_k_trajs(train_set:ReplayBuffer_traj, device='cuda', top_k_persent=10):
+    
+    sorted_trajs = sorted(train_set.buffer, key=lambda x:x['total_rewards'], reverse=True)
+    num_trajs = len(sorted_trajs)
+    top_k_trajs = sorted_trajs[:(num_trajs * top_k_persent // 100)]
+    top_k_buffer = ReplayBuffer(1000000, device)
+
+    # for traj in top_k_trajs:
+    #     print(traj['total_rewards'])
+    # print('----')
+
+    for traj in top_k_trajs:
+        for state, action, next_state, reward, done in zip(traj['states'], traj['actions'], traj['next_states'], traj['rewards'], traj['dones']):
+            top_k_buffer.push((state, action, reward, next_state, done))
+    
+    random.shuffle(top_k_buffer.buffer)
+
+    return top_k_buffer
 
 def seed_everything(seed):
     random.seed(seed)
@@ -72,11 +89,17 @@ hidden_dim = 256
 action_range = 10.0 if args.env=="reacher" else 1.0
 
 
-os.makedirs('./train_set/', exist_ok=True)
-target_buffer_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_target_buffer.pkl'
+train_set_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}.pkl'
 
-if os.path.exists(target_buffer_path):
-    buffer = load_buffer(target_buffer_path)
+if os.path.exists(train_set_path):
+    train_set = load_buffer(train_set_path)
+buffer = get_top_k_trajs(train_set)
+
+# target_buffer_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_target_buffer_expert.pkl'
+
+# if os.path.exists(target_buffer_path):
+#     buffer = load_buffer(target_buffer_path)
+
 buffers = split_buffer(buffer, args.num_BC, args.device)
 
 num_BC = args.num_BC
@@ -84,7 +107,7 @@ num_BC = args.num_BC
 mpc_dms = [MPC_DM(target_s_dim, target_a_dim, args.device) for i in range(num_BC)]
 mpc_dm_for_transition = MPC_DM(target_s_dim, target_a_dim, args.device)
 
-batch_size=512
+batch_size=32
 print('start training...')
 
 for i in range(args.MPC_pre_ep):

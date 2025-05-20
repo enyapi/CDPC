@@ -20,55 +20,6 @@ def seed_everything(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False  
 
-def collect_target_data(agent_target, agent_target_medium, target_env, n_traj, expert_ratio, device, seed):
-    buffer_maxlen = 1000000
-    buffer = ReplayBuffer(buffer_maxlen, device)
-    buffer_expert_only = ReplayBuffer(buffer_maxlen, device)
-    train_set = ReplayBuffer_traj()
-
-    env_target = gym.make(target_env)
-    max_episode_steps = env_target.spec.max_episode_steps 
-    for episode in range(int(n_traj)):
-        score = 0
-        state, _ = env_target.reset(seed=seed*episode) ############################################
-        state_list = []
-        next_state_list = []
-        for _ in range(max_episode_steps):
-            # action, _ = agent_target.predict(state, deterministic=True) # SB3
-            # if episode % 2 == 0:
-            #     action = agent_target.get_action(state, deterministic=True)
-            # else:
-            #     action = agent_target_medium.get_action(state, deterministic=True)
-            action = agent_target.get_action(state, deterministic=True)
-            
-            next_state, reward, terminated, truncated, _ = env_target.step(action)
-            done = truncated or terminated
-
-            done_mask = 0.0 if done else 1.0
-            buffer.push((state, action, reward, next_state, done_mask))
-
-            if episode < int(n_traj*expert_ratio):
-                buffer_expert_only.push((state, action, reward, next_state, done_mask))
-
-            state_list.append(state)
-            next_state_list.append(next_state)
-            state = next_state
-            score += reward
-            
-            if done: break
-
-        # if truncated:
-        #     action = agent_target.get_action(state, deterministic=True)
-        #     score += target_Q(torch.tensor(state[np.newaxis, :], dtype=torch.float).to('cuda'), torch.tensor(action[np.newaxis, :], dtype=torch.float).to('cuda'))
-        
-        train_set.push(score, state_list, next_state_list)
-        print("episode:{}, Return:{}, buffer_capacity:{}".format(episode, score, buffer.buffer_len()))
-    env_target.close()
-    
-    print(f"Collected {n_traj} trajectories.")
-    print(f"Collected {n_traj*max_episode_steps} transitions.")
-    return train_set, buffer, buffer_expert_only
-
 parser = argparse.ArgumentParser()
 parser.add_argument("MPC_pre_ep", type=int, nargs='?', default=1000)
 parser.add_argument("decoder_batch", type=int, nargs='?', default=32)
@@ -112,11 +63,13 @@ agent_target.load_state_dict(torch.load( f'{location}{str(args.seed)}_{args.env}
 agent_target_medium = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, args.device).to(args.device)
 agent_target_medium.load_state_dict(torch.load( f'{location}{str(args.seed)}_{args.env}_target_medium.pth', weights_only=True, map_location=args.device ))
 
-train_set, buffer, buffer_expert_only = collect_target_data(agent_target, agent_target_medium, target_env, args.n_traj, args.expert_ratio, args.device, args.seed)
+# train_set, buffer, buffer_expert_only = collect_target_data(agent_target, agent_target_medium, target_env, args.n_traj, args.expert_ratio, args.device, args.seed)
 
-# import pickle
-# with open('train_set/7_cheetah_1.0_buffer.pkl', 'rb') as f:
-#     buffer = pickle.load(f)
+target_buffer_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_target_buffer_expert.pkl'
+
+import pickle
+with open(target_buffer_path, 'rb') as f:
+    buffer = pickle.load(f)
 
 mpc_dm = MPC_DM(target_s_dim, target_a_dim, args.device)
 
