@@ -1,17 +1,13 @@
-import gymnasium as gym
 import torch
-import random
 import numpy as np
 import argparse
-import os
 import warnings
 import wandb
 from stable_baselines3 import SAC
-from sac_v2 import PolicyNetwork, SoftQNetwork
-from MPC_DM_model import ReplayBuffer, MPC_DM, Dynamic_Model
-# from sac_v2 import ReplayBuffer
-from MPC_v2 import ReplayBuffer_traj, MPC
-
+from sac_v2 import PolicyNetwork
+from MPC_DM_model import MPC_DM, Dynamic_Model
+from MPC_v2 import MPC
+from utils import seed_everything, load_buffer
 
 warnings.filterwarnings('ignore')
 
@@ -59,18 +55,7 @@ def CDPC(mpc, train_set, target_buffer, source_buffer, mpc_location, Is_wandb):
                     })
             
         torch.save(mpc.state_projector.state_dict(), f'{mpc_location}/{str(mpc.seed)}_state_projector_{args.num_ep}.pth')
-        torch.save(mpc.action_projector.state_dict(), f'{mpc_location}/{str(mpc.seed)}_action_projector_{args.num_ep}.pth')
-    
-
-def seed_everything(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False        
+        torch.save(mpc.action_projector.state_dict(), f'{mpc_location}/{str(mpc.seed)}_action_projector_{args.num_ep}.pth')     
 
 
 if __name__ == '__main__':
@@ -117,17 +102,9 @@ if __name__ == '__main__':
     agent_source = PolicyNetwork(source_s_dim, source_a_dim, hidden_dim, action_range, args.device).to(args.device)
     agent_source.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_source.pth', map_location=args.device ))
 
-    ##### 3 Collecting target domain data #####
+
+    ##### 2 Collecting target domain data #####
     print("##### Collecting target domain data #####")
-    import pickle
-    def save_buffer(buffer, filename):
-        with open(filename, 'wb') as f:
-            pickle.dump(buffer, f)
-
-    def load_buffer(filename):
-        with open(filename, 'rb') as f:
-            return pickle.load(f)
-
     data_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}.pkl'
     target_buffer_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_target_buffer.pkl'
     target_buffer_expert_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_target_buffer_expert.pkl'
@@ -142,7 +119,8 @@ if __name__ == '__main__':
 
     print(train_set.buffer_len())
 
-    ##### 4 Loading MPC policy and Dynamic Model #####
+
+    ##### 3 Loading MPC policy and Dynamic Model #####
     mpc_dm = MPC_DM(target_s_dim, target_a_dim, args.device)
     source_dynamics_model = Dynamic_Model(source_s_dim + source_a_dim, source_s_dim).to(args.device)
     print("##### Loading MPC policy and Dynamic Model #####")
@@ -150,7 +128,8 @@ if __name__ == '__main__':
     mpc_dm.dynamic_model.load_state_dict(torch.load( f'{mpc_location}/{str(args.seed)}_DynamicModel.pth', map_location=args.device ))
     source_dynamics_model.load_state_dict(torch.load( f'{mpc_location}/{str(args.seed)}_DynamicModel_source.pth', map_location=args.device ))
 
-    ##### 5 Training state decoder #####
+
+    ##### 4 Training state decoder #####
     print("##### Training state decoder #####")
     params = {
         'batch_size': args.decoder_batch,

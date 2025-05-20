@@ -1,14 +1,12 @@
 import gymnasium as gym
 import torch
-import random
 import numpy as np
 import argparse
 import os
 from sac_v2 import PolicyNetwork
 from MPC_DM_model import ReplayBuffer
-# from sac_v2 import ReplayBuffer
 from MPC_v2 import ReplayBuffer_traj
-import pickle
+from utils import seed_everything, save_buffer
 
 def collect_data(agent_expert, agent_medium, env, n_traj, expert_ratio, device, seed):
     buffer_maxlen = 1000000
@@ -67,23 +65,6 @@ def collect_data(agent_expert, agent_medium, env, n_traj, expert_ratio, device, 
     print(f"Collected {n_traj*max_episode_steps} transitions.")
     return train_set, buffer, buffer_expert_only
 
-def save_buffer(buffer, filename):
-    with open(filename, 'wb') as f:
-        pickle.dump(buffer, f)
-
-def load_buffer(filename):
-    with open(filename, 'rb') as f:
-        return pickle.load(f)
-
-def seed_everything(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False       
 
 if __name__ == '__main__':
 
@@ -123,13 +104,16 @@ if __name__ == '__main__':
     agent_source_medium = PolicyNetwork(source_s_dim, source_a_dim, hidden_dim, action_range, args.device).to(args.device)
     agent_source_medium.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_source_medium.pth', weights_only=True, map_location=args.device ))
 
-    ##### 2 Loading target domain expert policy #####
-    print("##### Loading target domain expert policy #####")
+
+    ##### 2 Loading target domain policy #####
+    print("##### Loading target domain policy #####")
     agent_target = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, args.device).to(args.device)
     agent_target_medium = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, args.device).to(args.device)
     agent_target.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_target.pth', weights_only=True, map_location=args.device ))
     agent_target_medium.load_state_dict(torch.load( f'{location}/{str(args.seed)}_{args.env}_target_medium.pth', weights_only=True, map_location=args.device ))
 
+
+    ##### 3 Collecting dataset #####
     os.makedirs('./train_set/', exist_ok=True)
     data_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}.pkl'
     target_buffer_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_target_buffer.pkl'
@@ -137,14 +121,7 @@ if __name__ == '__main__':
     source_buffer_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_source_buffer.pkl'
     source_buffer_expert_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_source_buffer_expert.pkl'
 
-    if os.path.exists(data_path):
-        train_set = load_buffer(data_path)
-        target_buffer = load_buffer(target_buffer_path)
-        target_buffer_expert_only = load_buffer(target_buffer_expert_path)
-        source_buffer = load_buffer(source_buffer_path)
-        source_buffer_expert_only = load_buffer(source_buffer_expert_path)
-
-    else:
+    if not os.path.exists(data_path):
         train_set, target_buffer, target_buffer_expert_only = collect_data(agent_target, agent_target_medium, target_env, args.n_traj, args.expert_ratio, args.device, args.seed)
         train_set2, source_buffer, source_buffer_expert_only = collect_data(agent_source, agent_source_medium, source_env, args.n_traj, args.expert_ratio, args.device, args.seed)
         

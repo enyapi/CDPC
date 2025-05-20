@@ -10,6 +10,7 @@ import random
 import argparse
 import os
 import pickle
+from utils import seed_everything
 
 class ReplayBuffer:
     def __init__(self, capacity):
@@ -36,26 +37,6 @@ class ReplayBuffer:
     
     def __len__(self):
         return len(self.buffer)
-
-
-class ValueNetwork(nn.Module):
-    def __init__(self, state_dim, hidden_dim, init_w=3e-3):
-        super(ValueNetwork, self).__init__()
-        
-        self.linear1 = nn.Linear(state_dim, hidden_dim)
-        self.linear2 = nn.Linear(hidden_dim, hidden_dim)
-        # self.linear3 = nn.Linear(hidden_dim, hidden_dim)
-        self.linear4 = nn.Linear(hidden_dim, 1)
-        # weights initialization
-        self.linear4.weight.data.uniform_(-init_w, init_w)
-        self.linear4.bias.data.uniform_(-init_w, init_w)
-        
-    def forward(self, state):
-        x = F.relu(self.linear1(state))
-        x = F.relu(self.linear2(x))
-        # x = F.relu(self.linear3(x))
-        x = self.linear4(x)
-        return x
         
         
 class SoftQNetwork(nn.Module):
@@ -276,14 +257,14 @@ class SAC():
             )
         return predicted_new_q_value.mean()
 
-    def evaluate(self):
+
+    def evaluate(self, eval_episode=10):
         print("==============================================")
         print("Evaluating...")
         all_rewards = []
-        eval_episode = 5
-        for _ in range(eval_episode):
+        for i in range(eval_episode):
             score = 0
-            state = self.test_env.reset(seed = self.args.seed)[0]
+            state = self.test_env.reset(seed = self.args.seed * i)[0]
             for _ in range(self.test_env.spec.max_episode_steps):
                 action = self.policy_net.get_action(state, deterministic = True)
                 next_state, reward, terminated, truncated, _ = self.test_env.step(action)
@@ -300,18 +281,6 @@ class SAC():
         return avg
 
 
-
-def seed_everything(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--ep", type=int, nargs='?', default=10000)
@@ -319,7 +288,7 @@ if __name__ == '__main__':
     parser.add_argument("--device", type=str, nargs='?', default="cuda")
     parser.add_argument("--domain", type=str, nargs='?', default="source")
     parser.add_argument("--env", type=str, nargs='?', default="cheetah")
-    parser.add_argument("--hidden_dim", type=str, nargs='?', default=256)
+    parser.add_argument("--hidden_dim", type=int, nargs='?', default=256)
     
     args = parser.parse_args()
     seed_everything(args.seed)
@@ -357,7 +326,7 @@ if __name__ == '__main__':
     agent = SAC(replay_buffer, hidden_dim=hidden_dim, action_range=action_range, args=args, observation_space=state_dim, action_space=action_dim, device=device)
     location = f'./models/{args.env}/seed_{str(args.seed)}'
 
-    if not os.path.exists(location): os.makedirs(location)
+    os.makedirs(location, exist_ok=True)
     if not os.path.exists(f'{location}/{str(args.seed)}_{args.env}_{args.domain}.pth'):
         test_score = agent.evaluate()
         wandb.log({"episode": 0, "test/score": test_score})
