@@ -15,7 +15,7 @@ def CDPC(mpc, train_set, target_buffer, source_buffer, mpc_location, Is_wandb):
     # val state decoder
     total_reward = mpc.evaluate() 
     if Is_wandb:
-        wandb.log({"cdpc episode": 0, "valid/reward": total_reward, })
+        wandb.log({"cdpc episode": 0, "test/reward": total_reward, })
     print(f'episode: {0}, validation reward: {total_reward}')
     
     for j in range(1, args.num_ep+1):
