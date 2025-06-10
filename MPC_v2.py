@@ -193,7 +193,7 @@ class MPC(object):
         next_state_b = torch.stack(next_state_b, dim=0).to(self.device)
 
         R_s_a_tensor = self.pref_calculation(state_a, action_a)
-        R_s_b_tensor = self.pref_calculation(state_b, action_a)
+        R_s_b_tensor = self.pref_calculation(state_b, action_b)
 
         ## preference consistency loss
         result_tensor = torch.cat((R_s_a_tensor, R_s_b_tensor), dim=-1).type(torch.float32)#.unsqueeze(0)
@@ -332,6 +332,58 @@ class MPC(object):
         else:
             return trajectory_info_b, trajectory_info_a
     
+    def make_env_target(self, seed):
+        def _init():
+            env = gym.make(self.target_env).unwrapped
+            env.reset(seed=seed)
+            return env
+        return _init
+    
+    def __sampleTraj_TrueEnv(self, state):
+        """
+        Sample trajectory using true environment dynamics instead of dynamics model
+        """
+        self.mpc_policy_net.eval()
+        state = torch.tensor(state, dtype=torch.float32, device=self.device)
+        
+        action = self.mpc_policy_net(state)
+
+        traj_state = torch.zeros((self.N, self.h+1, state.shape[-1]), dtype=torch.float32, device=self.device)
+        traj_action = torch.zeros((self.N, self.h, self.target_action_space_dim), dtype=torch.float32, device=self.device)
+        
+        traj_state[:, 0, :] = state 
+        
+        noise = torch.randn((self.N, *action.shape), dtype=torch.float32, device=self.device) * 0.1
+        action_noisy = action + noise
+        action_noisy[0] = action
+        traj_action[:, 0, :] = action_noisy
+
+        # Create N environments for parallel execution
+        env_fns = [self.make_env_target(self.seed) for _ in range(self.N)]
+        vec_env = DummyVecEnv(env_fns)
+        
+        # Set initial states for all environments
+        for i, env in enumerate(vec_env.envs):
+            env.reset_specific(state=state.cpu().detach().numpy())
+        
+        a = action_noisy
+
+        for j in range(1, self.h):
+            # Get next states from true environment
+            next_states, _, _, _ = vec_env.step(a.cpu().detach().numpy())
+            s = torch.tensor(next_states, dtype=torch.float32, device=self.device)
+            traj_state[:, j, :] = s
+
+            a = self.mpc_policy_net(s)
+            traj_action[:, j, :] = a
+
+        # Get final states
+        next_states, _, _, _ = vec_env.step(a.cpu().detach().numpy())
+        s = torch.tensor(next_states, dtype=torch.float32, device=self.device)
+        traj_state[:, self.h, :] = s
+
+        return traj_state, traj_action
+    
 
     def __sampleTraj(self, state): ## 0.008s
         self.mpc_policy_net.eval()
@@ -367,16 +419,14 @@ class MPC(object):
     
     def __decodeTraj(self, s, a): ## 0.17
         with torch.no_grad():
-            env_fns = [self.make_env(self.seed) for _ in range(self.N)]
-            vec_env = DummyVecEnv(env_fns)
+            if self.env == "cheetah":
+                env_fns = [self.make_env(self.seed) for _ in range(self.N)]
+                vec_env = DummyVecEnv(env_fns)
 
             rewards = np.zeros(self.N)
             for j in range(self.h):
                 source_states = self.state_projector(s[:, j, :])
                 source_actions = self.action_projector(s[:, j, :], a[:, j, :])
-
-                for i, env in enumerate(vec_env.envs):
-                    env.reset_specific(state=source_states[i].cpu().detach().numpy())
 
                 if self.env == "reacher":
                     r = np.array([
@@ -384,6 +434,8 @@ class MPC(object):
                         for i in range(self.N)
                     ])
                 elif self.env == "cheetah":
+                    for i, env in enumerate(vec_env.envs):
+                        env.reset_specific(state=source_states[i].cpu().detach().numpy())
                     next_states, r, _, _ = vec_env.step(source_actions.cpu().detach().numpy())
                     r = np.array([
                         cheetah_source_R(source_states[i], source_actions[i], next_states[i]).cpu().detach().numpy()

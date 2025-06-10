@@ -3,6 +3,8 @@ import numpy as np
 from gymnasium import utils
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.spaces import Box
+from typing import Optional
+import mujoco
 
 
 DEFAULT_CAMERA_CONFIG = {"trackbodyid": 0}
@@ -78,3 +80,70 @@ class ReacherEnv_3joints(MujocoEnv, utils.EzPickle):
                 self.get_body_com("fingertip") - self.get_body_com("target"),
             ]
         )
+
+    def reset_specific(
+        self,
+        state,
+        *,
+        seed: Optional[int] = None,
+        options: Optional[dict] = None,
+    ):
+        super().reset(seed=seed)
+
+        mujoco.mj_resetData(self.model, self.data)
+
+        ob = self.reset_specific_model(state)
+        info = self._get_reset_info()
+
+        if self.render_mode == "human":
+            self.render()
+        return ob, info
+
+    def reset_specific_model(self, state):
+        qpos = np.zeros(5)
+        qvel = np.zeros(5)
+        
+        #reset qpos
+        qpos[3:] = state[6:8]
+        '''
+        if state[2] > 0: 
+            theta0 = np.arccos(state[0])
+        else: 
+            theta0 = 2 * math.pi - np.arccos(state[0])
+            
+        if state[3] > 0: 
+            theta1 = np.arccos(state[1])
+        else: 
+            theta1 = 2 * math.pi - np.arccos(state[1])
+        '''
+        theta0 = np.arctan2(state[3], state[0])
+        theta1 = np.arctan2(state[4], state[1])
+        theta2 = np.arctan2(state[5], state[2])
+        #print("cos")
+        #print(state[0])
+        #print(np.cos(theta0))
+        qpos[0] = theta0
+        qpos[1] = theta1
+        qpos[2] = theta2
+        
+        #reset qvel
+        qvel[:3] = state[8:11]
+        qvel[-2:] = 0
+        
+        #reset position_fingertip - position_target
+        self.data.body("target").xpos = np.append(qpos[3:], 0.01)
+        self.data.body("fingertip").xpos = state[-3:] + self.data.body("target").xpos
+        
+        self.set_specific_state(qpos, qvel)
+        return self._get_obs()
+        
+    def set_specific_state(self, qpos, qvel):
+        """Set the joints position qpos and velocity qvel of the model.
+
+        Note: `qpos` and `qvel` is not the full physics state for all mujoco models/environments https://mujoco.readthedocs.io/en/stable/APIreference/APItypes.html#mjtstate
+        """
+        assert qpos.shape == (self.model.nq,) and qvel.shape == (self.model.nv,)
+        self.data.qpos[:] = np.copy(qpos)
+        self.data.qvel[:] = np.copy(qvel)
+        if self.model.na == 0:
+            self.data.act[:] = None

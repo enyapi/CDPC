@@ -121,11 +121,13 @@ def evaluate(seed, env, mpc_dms, DM, target_a_dim, action_projector, state_proje
 
 
         s1, r1, terminated, truncated, _ = env_target.step(a0_target)
+        #env_target.render()
         done = truncated or terminated
         total_reward += r1
         s0 = s1
         
         if done: break
+    #env_target.close()
     # print(i)
     # print("best reward:", best_rewards)
     # print("total reward:", total_reward)

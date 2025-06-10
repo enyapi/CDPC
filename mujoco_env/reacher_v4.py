@@ -129,7 +129,7 @@ class ReacherEnv(MujocoEnv, utils.EzPickle):
         qvel[-2:] = 0
         
         #reset position_fingertip - position_target
-        self.data.body("target").xpos = np.append(self.data.qpos.flat[2:], 0.01)
+        self.data.body("target").xpos = np.append(qpos[2:], 0.01)
         self.data.body("fingertip").xpos = state[-3:] + self.data.body("target").xpos
         
         self.set_specific_state(qpos, qvel)
