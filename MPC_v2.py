@@ -350,7 +350,8 @@ class MPC(object):
 
         traj_state = torch.zeros((self.N, self.h+1, state.shape[-1]), dtype=torch.float32, device=self.device)
         traj_action = torch.zeros((self.N, self.h, self.target_action_space_dim), dtype=torch.float32, device=self.device)
-        
+        rewards = torch.zeros(self.N, dtype=torch.float32, device=self.device)
+
         traj_state[:, 0, :] = state 
         
         noise = torch.randn((self.N, *action.shape), dtype=torch.float32, device=self.device) * 0.1
@@ -370,19 +371,22 @@ class MPC(object):
 
         for j in range(1, self.h):
             # Get next states from true environment
-            next_states, _, _, _ = vec_env.step(a.cpu().detach().numpy())
+            next_states, r, _, _ = vec_env.step(a.cpu().detach().numpy())
             s = torch.tensor(next_states, dtype=torch.float32, device=self.device)
             traj_state[:, j, :] = s
 
             a = self.mpc_policy_net(s)
             traj_action[:, j, :] = a
 
+            r = torch.tensor(r, dtype=torch.float32, device=self.device)
+            rewards += r
+
         # Get final states
         next_states, _, _, _ = vec_env.step(a.cpu().detach().numpy())
         s = torch.tensor(next_states, dtype=torch.float32, device=self.device)
         traj_state[:, self.h, :] = s
 
-        return traj_state, traj_action
+        return traj_state, traj_action, rewards
     
 
     def __sampleTraj(self, state): ## 0.008s
@@ -446,7 +450,8 @@ class MPC(object):
 
             best_idx = np.argsort(rewards)[-1]
             best_action = a[best_idx, 0, :]
-        return best_action, rewards[best_idx]
+        return best_action, rewards, best_idx
+        #return best_action, rewards[best_idx]
 
 
     def evaluate(self):

@@ -5,7 +5,8 @@ import numpy as np
 from gymnasium import utils
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.spaces import Box
-
+from typing import Optional
+import mujoco
 
 DEFAULT_CAMERA_CONFIG = {
     "distance": 4.0,
@@ -55,7 +56,7 @@ class HalfCheetahEnv_3legs(MujocoEnv, utils.EzPickle):
             )
         else:
             observation_space = Box(
-                low=-np.inf, high=np.inf, shape=(18,), dtype=np.float64
+                low=-np.inf, high=np.inf, shape=(24,), dtype=np.float64
             )
 
         MujocoEnv.__init__(
@@ -122,3 +123,53 @@ class HalfCheetahEnv_3legs(MujocoEnv, utils.EzPickle):
 
         observation = self._get_obs()
         return observation
+
+    def reset_specific(
+        self,
+        state,
+        *,
+        seed: Optional[int] = None,
+        options: Optional[dict] = None,
+    ):
+        super().reset(seed=seed)
+
+        mujoco.mj_resetData(self.model, self.data)
+
+        ob = self.reset_specific_model(state)
+        info = self._get_reset_info()
+
+        if self.render_mode == "human":
+            self.render()
+        return ob, info
+    
+    def reset_specific_model(self, state): 
+        #reset qpos, qvel
+        noise_low = -self._reset_noise_scale
+        noise_high = self._reset_noise_scale
+
+        qpos = self.init_qpos + self.np_random.uniform(
+            low=noise_low, high=noise_high, size=self.model.nq
+        )
+        qvel = (
+            self.init_qvel
+            + self._reset_noise_scale * self.np_random.standard_normal(self.model.nv)
+        )
+
+        qpos[1:] = state[:11]
+        qvel[:] = state[11:]
+        
+        self.set_specific_state(qpos, qvel)
+        
+        observation = self._get_obs()
+        return observation
+        
+    def set_specific_state(self, qpos, qvel):
+        """Set the joints position qpos and velocity qvel of the model.
+
+        Note: `qpos` and `qvel` is not the full physics state for all mujoco models/environments https://mujoco.readthedocs.io/en/stable/APIreference/APItypes.html#mjtstate
+        """
+        assert qpos.shape == (self.model.nq,) and qvel.shape == (self.model.nv,)
+        self.data.qpos[:] = np.copy(qpos)
+        self.data.qvel[:] = np.copy(qvel)
+        if self.model.na == 0:
+            self.data.act[:] = None
