@@ -8,6 +8,7 @@ from MPC_v2 import MPC, ReplayBuffer_traj
 from utils import seed_everything
 import random
 import gymnasium as gym
+import matplotlib.pyplot as plt
 
 warnings.filterwarnings('ignore')
 
@@ -31,35 +32,10 @@ def reacher_target_R(states, actions):
     
     return total_reward
 
-def calculate_preference_accuracy(mpc, num_comparisons=1000):
+def calculate_preference_accuracy(mpc, buffer, num_comparisons=1000):
     """
     Calculate preference accuracy by comparing pairs of trajectories
     """
-    # Create a small buffer of trajectories for comparison
-    buffer = ReplayBuffer_traj()
-    
-# 1. Generate trajectories
-    print("Generating trajectories...")
-    env = gym.make(mpc.target_env)
-    state, _ = env.reset(seed=args.seed)
-    
-    # Sample trajectory - returns [N, h+1, state_dim] and [N, h, action_dim]
-    traj_states, traj_actions = mpc._MPC__sampleTraj(state)
-    #traj_states, traj_actions = mpc._MPC__sampleTraj_TrueEnv(state)
-    traj_states = traj_states[:, :-1]
-    
-    # Calculate total reward for all trajectories in batch at once
-    total_rewards = reacher_target_R(traj_states, traj_actions)
-    
-    # Store all trajectories in the buffer
-    for i in range(traj_states.shape[0]):
-        buffer.push(total_rewards[i].item(), 
-                   traj_states[i].cpu().detach().numpy(),
-                   traj_actions[i].cpu().detach().numpy(),
-                   np.array([]), np.array([]), np.array([]))
-    print(f"Stored {traj_states.shape[0]} trajectories in buffer")
-    
-# 2 & 3. Calculate rewards and source domain returns
     print("\nCalculating preferences...")
     correct_predictions = 0
     total_predictions = 0
@@ -110,6 +86,7 @@ def calculate_preference_accuracy(mpc, num_comparisons=1000):
     print(f"\nFinal Preference Accuracy: {final_acc:.3f}")
     return final_acc
 
+
 def evaluate(mpc, num_episodes=10):
     rewards1 = []  # For env reward
     rewards2 = []  # For function reward
@@ -124,17 +101,44 @@ def evaluate(mpc, num_episodes=10):
         total_reward = 0
         total_reward2 = 0
         best_rewards = 0
+        pref_accs = []
         
         for i in range(env_target.spec.max_episode_steps):
-            ## MPC inference
-            s, a = mpc._MPC__sampleTraj(s0)
-            #s, a = mpc._MPC__sampleTraj_TrueEnv(s0)
-            a0_target, best_reward = mpc._MPC__decodeTraj(s, a)
-            a0_target = a0_target.cpu().detach().numpy()
+        ## MPC inference
+            if dynamic == "dm":
+                s, a = mpc._MPC__sampleTraj(s0)
+            elif dynamic == "env":
+                s, a, r = mpc._MPC__sampleTraj_TrueEnv(s0)
 
-            s1, r1, terminated, truncated, _ = env_target.step(a0_target)
+            a0_target, best_reward, _ = mpc._MPC__decodeTraj(s, a)
+
+        ## Preference accuracy
+            # eval_freq = 5
+            # if episode == 0 and i % eval_freq == 0:
+            #     ## 1. Save trajs to buffer
+            #     buffer = ReplayBuffer_traj()
+            #     s = s[:, :-1]
+            #     total_rewards = reacher_target_R(s, a)
+            #     for j in range(s.shape[0]):
+            #         buffer.push(total_rewards[j].item(), 
+            #                 s[j].cpu().detach().numpy(),
+            #                 a[j].cpu().detach().numpy(),
+            #                 np.array([]), np.array([]), np.array([]))
+            #     print(f"Stored {s.shape[0]} trajectories in buffer")
+
+            #     ## 2 & 3. Calculate rewards and source domain returns
+            #     pref_acc = calculate_preference_accuracy(mpc, buffer) 
+            #     pref_accs.append(pref_acc)
+            #     print(f"step {i}, preference accuracy: {pref_acc}") 
+
+        ## Take step
+            best_idx = torch.argmax(r)
+            #print(best_idx)
+            true_action = a[best_idx, 0, :].cpu().detach().numpy()
+            a0_target = a0_target.cpu().detach().numpy() 
+            s1, r1, terminated, truncated, _ = env_target.step(true_action)
             
-            # Convert numpy arrays to PyTorch tensors
+        ## Convert numpy arrays to PyTorch tensors
             s0_tensor = torch.tensor(s0, dtype=torch.float32, device=mpc.device)
             a0_tensor = torch.tensor(a0_target, dtype=torch.float32, device=mpc.device)
             s0_tensor = s0_tensor.unsqueeze(0).unsqueeze(0)  # [1, 1, state_dim]
@@ -165,6 +169,15 @@ def evaluate(mpc, num_episodes=10):
     print(f"Average Env Reward: {avg_reward1:.3f} ± {std_reward1:.3f}")
     #print(f"Average Function Reward: {avg_reward2:.3f} ± {std_reward2:.3f}")
     #print(f"Average Best Reward: {avg_best_reward:.3f} ± {std_best_reward:.3f}")
+
+    # Plot results
+    # plt.plot(np.arange(len(pref_accs)) * eval_freq, pref_accs)
+    # plt.xlabel('Step')
+    # plt.ylabel('Acc (%)')
+    # plt.title(f'Preference Accuracy Over Time ({dynamic})')
+
+    # plt.savefig(f'pref_acc_{mpc.h}{dynamic}.png')
+    # plt.close()
     
     return avg_reward1, avg_reward2, avg_best_reward
 
@@ -260,10 +273,9 @@ if __name__ == '__main__':
     
     print("\nStarting evaluation...")
     # Evaluate preference accuracy
-    mpc.h = 50
-    pref_acc = calculate_preference_accuracy(mpc)
-    
     # Evaluate CDPC reward
+    mpc.h = 10
+    dynamic = "env" #"dm"env
     total_reward1, total_reward2, best_rewards = evaluate(mpc)
 
     total_reward = evaluation_mpc(mpc)
