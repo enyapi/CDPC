@@ -3,7 +3,7 @@ import numpy as np
 import argparse
 import warnings
 from sac_v2 import PolicyNetwork
-from MPC_DM_model import MPC_DM, Dynamic_Model
+from MPC_DM_model import MPC_Policy_Net, Dynamic_Model
 from MPC_v2 import MPC, ReplayBuffer_traj
 from utils import seed_everything
 import random
@@ -113,30 +113,31 @@ def evaluate(mpc, num_episodes=10):
             a0_target, best_reward, _ = mpc._MPC__decodeTraj(s, a)
 
         ## Preference accuracy
-            # eval_freq = 5
-            # if episode == 0 and i % eval_freq == 0:
-            #     ## 1. Save trajs to buffer
-            #     buffer = ReplayBuffer_traj()
-            #     s = s[:, :-1]
-            #     total_rewards = reacher_target_R(s, a)
-            #     for j in range(s.shape[0]):
-            #         buffer.push(total_rewards[j].item(), 
-            #                 s[j].cpu().detach().numpy(),
-            #                 a[j].cpu().detach().numpy(),
-            #                 np.array([]), np.array([]), np.array([]))
-            #     print(f"Stored {s.shape[0]} trajectories in buffer")
+            eval_freq = 5
+            if episode == 0 and i % eval_freq == 0:
+                ## 1. Save trajs to buffer
+                buffer = ReplayBuffer_traj()
+                s = s[:, :-1]
+                total_rewards = reacher_target_R(s, a)
+                for j in range(s.shape[0]):
+                    buffer.push(total_rewards[j].item(), 
+                            s[j].cpu().detach().numpy(),
+                            a[j].cpu().detach().numpy(),
+                            np.array([]), np.array([]), np.array([]))
+                print(f"Stored {s.shape[0]} trajectories in buffer")
 
-            #     ## 2 & 3. Calculate rewards and source domain returns
-            #     pref_acc = calculate_preference_accuracy(mpc, buffer) 
-            #     pref_accs.append(pref_acc)
-            #     print(f"step {i}, preference accuracy: {pref_acc}") 
+                ## 2 & 3. Calculate rewards and source domain returns
+                pref_acc = calculate_preference_accuracy(mpc, buffer) 
+                pref_accs.append(pref_acc)
+                print(f"step {i}, preference accuracy: {pref_acc}") 
 
         ## Take step
-            best_idx = torch.argmax(r)
-            #print(best_idx)
-            true_action = a[best_idx, 0, :].cpu().detach().numpy()
+            # best_idx = torch.argmax(r)
+            # #print(best_idx)
+            # true_action = a[best_idx, 0, :].cpu().detach().numpy()
+            
             a0_target = a0_target.cpu().detach().numpy() 
-            s1, r1, terminated, truncated, _ = env_target.step(true_action)
+            s1, r1, terminated, truncated, _ = env_target.step(a0_target)
             
         ## Convert numpy arrays to PyTorch tensors
             s0_tensor = torch.tensor(s0, dtype=torch.float32, device=mpc.device)
@@ -171,13 +172,13 @@ def evaluate(mpc, num_episodes=10):
     #print(f"Average Best Reward: {avg_best_reward:.3f} ± {std_best_reward:.3f}")
 
     # Plot results
-    # plt.plot(np.arange(len(pref_accs)) * eval_freq, pref_accs)
-    # plt.xlabel('Step')
-    # plt.ylabel('Acc (%)')
-    # plt.title(f'Preference Accuracy Over Time ({dynamic})')
+    plt.plot(np.arange(len(pref_accs)) * eval_freq, pref_accs)
+    plt.xlabel('Step')
+    plt.ylabel('Acc (%)')
+    plt.title(f'Preference Accuracy Over Time ({dynamic})')
 
-    # plt.savefig(f'pref_acc_{mpc.h}{dynamic}.png')
-    # plt.close()
+    plt.savefig(f'pref_acc_{mpc.h}{dynamic}.png')
+    plt.close()
     
     return avg_reward1, avg_reward2, avg_best_reward
 
@@ -188,7 +189,7 @@ def evaluation_mpc(mpc):
     for i in range(env.spec.max_episode_steps):
         #env.render()
         state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(mpc.device)
-        action = mpc_dm.mpc_policy_net(state).cpu().detach().numpy().squeeze(0)
+        action = mpc.mpc_policy_net(state).cpu().detach().numpy().squeeze(0)
         #action = trained_agent.get_action(state, deterministic=True)
         #action = env.action_space.sample()
         next_state, reward, done, _, _ = env.step(action)
@@ -238,12 +239,13 @@ if __name__ == '__main__':
     agent_source.load_state_dict(torch.load(f'{location}/{str(args.seed)}_{args.env}_source.pth', map_location=args.device))
     
     print("Loading MPC policy and Dynamic Model...")
-    mpc_dm = MPC_DM(target_s_dim, target_a_dim, args.device)
+    mpc_policy = MPC_Policy_Net(target_s_dim, target_a_dim).to(args.device)
+    dm = Dynamic_Model(target_s_dim + target_a_dim, target_s_dim).to(args.device)
     source_dynamics_model = Dynamic_Model(source_s_dim + source_a_dim, source_s_dim).to(args.device)
     
     # Load trained models
-    mpc_dm.mpc_policy_net.load_state_dict(torch.load(f'{mpc_location}/{str(args.seed)}_MPCModel.pth', map_location=args.device))
-    mpc_dm.dynamic_model.load_state_dict(torch.load(f'{mpc_location}/{str(args.seed)}_DynamicModel.pth', map_location=args.device))
+    mpc_policy.load_state_dict(torch.load(f'{mpc_location}/{str(args.seed)}_MPCModel.pth', map_location=args.device))
+    dm.load_state_dict(torch.load(f'{mpc_location}/{str(args.seed)}_DynamicModel.pth', map_location=args.device))
     source_dynamics_model.load_state_dict(torch.load(f'{mpc_location}/{str(args.seed)}_DynamicModel_source.pth', map_location=args.device))
     
     # Set up MPC parameters
@@ -257,7 +259,8 @@ if __name__ == '__main__':
         'target_state_space_dim': target_s_dim,
         'target_action_space_dim': target_a_dim,
         'agent': agent_source,
-        "mpc_dm": mpc_dm,
+        'mpc_policy_net': mpc_policy,
+        "dynamics_model": dm,
         "source_dynamics_model": source_dynamics_model,
         "device": args.device,
         "seed": args.seed,
@@ -274,8 +277,8 @@ if __name__ == '__main__':
     print("\nStarting evaluation...")
     # Evaluate preference accuracy
     # Evaluate CDPC reward
-    mpc.h = 10
-    dynamic = "env" #"dm"env
+    mpc.h = 20
+    dynamic = "dm" #"dm"env
     total_reward1, total_reward2, best_rewards = evaluate(mpc)
 
     total_reward = evaluation_mpc(mpc)

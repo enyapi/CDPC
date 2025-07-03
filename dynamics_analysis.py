@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from gymnasium.wrappers import RecordVideo
 import argparse
 from sac_v2 import PolicyNetwork
-from MPC_DM_model import MPC_DM, Dynamic_Model
+from MPC_DM_model import MPC_Policy_Net, Dynamic_Model
 from MPC_v2 import MPC
 from utils import seed_everything
 
@@ -141,12 +141,13 @@ if __name__ == '__main__':
     agent_source.load_state_dict(torch.load(f'{location}/{str(args.seed)}_{args.env}_source.pth', map_location=args.device))
     
     print("Loading MPC policy and Dynamic Model...")
-    mpc_dm = MPC_DM(target_s_dim, target_a_dim, args.device)
+    mpc_policy = MPC_Policy_Net(target_s_dim, target_a_dim).to(args.device)
+    dm = Dynamic_Model(target_s_dim + target_a_dim, target_s_dim).to(args.device)
     source_dynamics_model = Dynamic_Model(source_s_dim + source_a_dim, source_s_dim).to(args.device)
     
     # Load trained models
-    mpc_dm.mpc_policy_net.load_state_dict(torch.load(f'{mpc_location}/{str(args.seed)}_MPCModel.pth', map_location=args.device))
-    mpc_dm.dynamic_model.load_state_dict(torch.load(f'{mpc_location}/{str(args.seed)}_DynamicModel.pth', map_location=args.device))
+    mpc_policy.load_state_dict(torch.load(f'{mpc_location}/{str(args.seed)}_MPCModel.pth', map_location=args.device))
+    dm.load_state_dict(torch.load(f'{mpc_location}/{str(args.seed)}_DynamicModel.pth', map_location=args.device))
     source_dynamics_model.load_state_dict(torch.load(f'{mpc_location}/{str(args.seed)}_DynamicModel_source.pth', map_location=args.device))
     
     # Set up MPC parameters
@@ -160,7 +161,8 @@ if __name__ == '__main__':
         'target_state_space_dim': target_s_dim,
         'target_action_space_dim': target_a_dim,
         'agent': agent_source,
-        "mpc_dm": mpc_dm,
+        'mpc_policy_net': mpc_policy,
+        "dynamics_model": dm,
         "source_dynamics_model": source_dynamics_model,
         "device": args.device,
         "seed": args.seed,

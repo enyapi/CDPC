@@ -3,9 +3,7 @@ import torch
 import argparse
 import os
 import wandb
-from sac_v2 import PolicyNetwork
-from MPC_DM_model import MPC_DM
-#from stable_baselines3 import SAC
+from MPC_DM_model import MPCPolicyTrainer, DynamicsModelTrainer
 from utils import seed_everything, load_buffer
 
 parser = argparse.ArgumentParser()
@@ -14,7 +12,7 @@ parser.add_argument("--seed", type=int, nargs='?', default=7)
 parser.add_argument("--expert_ratio", type=float, nargs='?', default=0.2) # random_ratio=1-expert_ratio
 parser.add_argument("--device", type=str, nargs='?', default="cuda")
 parser.add_argument("--env", type=str, nargs='?', default="cheetah") # cheetah reacher
-parser.add_argument("--wandb", action='store_true', default=True)
+parser.add_argument("--wandb", action='store_true', default=False)
 
 args = parser.parse_args()
 seed_everything(args.seed)
@@ -30,40 +28,38 @@ elif args.env == "cheetah":
 
 if args.wandb:
     wandb.init(project="cdpc", name = f'BC training', tags=["policy&DM"])
+
 location = f'./models/{args.env}/seed_{str(args.seed)}/'
 mpc_location = f'{location}/expert_ratio_{args.expert_ratio}/'
-hidden_dim = 256
-action_range = 10.0 if args.env=="reacher" else 1.0
 
-# agent_target = SAC.load('models/cheetah/seed_7/HalfCheetah-3legs_SAC_3_128_200000_2.zip', device=args.device) # SB3
-agent_target = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, args.device).to(args.device)
-agent_target.load_state_dict(torch.load( f'{location}{str(args.seed)}_{args.env}_target.pth', weights_only=True, map_location=args.device ))
-agent_target_medium = PolicyNetwork(target_s_dim, target_a_dim, hidden_dim, action_range, args.device).to(args.device)
-agent_target_medium.load_state_dict(torch.load( f'{location}{str(args.seed)}_{args.env}_target_medium.pth', weights_only=True, map_location=args.device ))
-
-target_buffer_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_target_buffer_expert.pkl'
+target_buffer_path = f'./train_set/{str(args.seed)}_{args.env}_{args.expert_ratio}_target_buffer.pkl' ## medium-expert
+target_test_buffer_path = f'./train_set/7_{args.env}_{args.expert_ratio}_target_buffer.pkl'
 buffer = load_buffer(target_buffer_path)
+test_buffer = load_buffer(target_test_buffer_path)
 
-mpc_dm = MPC_DM(target_s_dim, target_a_dim, args.device)
+mpc_policy = MPCPolicyTrainer(target_s_dim, target_a_dim, args.device)
+dm = DynamicsModelTrainer(target_s_dim, target_a_dim, args.device)
 
 if not os.path.exists(f'{mpc_location}/{str(args.seed)}_MPCModel.pth'):
     print("##### Training MPC policy and Dynamic Model #####")
     os.makedirs(mpc_location, exist_ok=True)
-    batch_size=128
+    batch_size = 128
 
     for i in range(args.MPC_pre_ep):
-        loss_mpc, loss_dm = mpc_dm.update(batch_size, buffer)
+        loss_mpc = mpc_policy.update(batch_size, buffer)
+        loss_dm = dm.update(batch_size, buffer)
 
         if args.wandb:
             wandb.log({"mpc_dm episode": i, "train/loss_mpc": loss_mpc, "train/loss_dm": loss_dm,})
 
-        if i % 10==0:
+        if i % 10 == 0:
             env = gym.make(target_env)
-            reward = mpc_dm.evaluate_policy(env, args.seed)
-            print(f"episode: {i}/{args.MPC_pre_ep}, reward: {reward}")
+            reward = mpc_policy.evaluate_policy(env, args.seed)
+            val_loss_dm = dm.evaluate_dm(batch_size, test_buffer)
+            print(f"episode: {i}/{args.MPC_pre_ep}, reward: {reward}, val_loss_dm: {val_loss_dm.item()}")
             if args.wandb:
-                wandb.log({"mpc_dm episode": i, "test/BC_score": reward,})
+                wandb.log({"mpc_dm episode": i, "test/BC_score": reward, "test/val_loss_dm": val_loss_dm.item()})
 
-    torch.save(mpc_dm.mpc_policy_net.state_dict(), f'{mpc_location}/{str(args.seed)}_MPCModel.pth')
-    torch.save(mpc_dm.dynamic_model.state_dict(), f'{mpc_location}/{str(args.seed)}_DynamicModel.pth')
+    torch.save(mpc_policy.policy_net.state_dict(), f'{mpc_location}/{str(args.seed)}_MPCModel.pth')
+    torch.save(dm.model.state_dict(), f'{mpc_location}/{str(args.seed)}_DynamicModel.pth')
     print(f'{mpc_location}/{str(args.seed)}_DynamicModel.pth saved')

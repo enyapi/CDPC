@@ -146,10 +146,6 @@ class MPC(object):
         # self.ap_optimizer = optim.Adam(self.action_projector.parameters(), lr=self.lr)
         self.sd_optimizer = optim.Adam(self.state_discriminator.parameters(), lr=self.lr)
         self.ad_optimizer = optim.Adam(self.action_discriminator.parameters(), lr=self.lr)
-        
-        # mpc policy net
-        self.mpc_policy_net = self.mpc_dm.mpc_policy_net
-        self.dynamics_model = self.mpc_dm.dynamic_model
 
         self.update_freq_D = 3
 

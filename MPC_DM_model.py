@@ -72,81 +72,79 @@ class MPC_Policy_Net(nn.Module):
 
         x = F.gelu(self.linear1(x))
         x = F.gelu(self.linear2(x))
-        x = F.tanh(self.linear3(x))
+        x = torch.tanh(self.linear3(x))
 
         return x
 
 class Dynamic_Model(nn.Module):
     def __init__(self, input_size, output_size):
         super(Dynamic_Model, self).__init__()
-        self.fc1 = nn.Linear(input_size, 250)
-        self.fc2 = nn.Linear(250, 250)
-        self.fc3 = nn.Linear(250, 250)  
-        self.fc4 = nn.Linear(250, 250)
-        self.fc5 = nn.Linear(250, 250)
-        self.fc6 = nn.Linear(250, output_size)
+        hidden_size = 512
+        self.fc1 = nn.Linear(input_size, hidden_size)
+        # self.fc2 = nn.Linear(250, 250)
+        # self.fc3 = nn.Linear(250, 250)
+        # self.fc4 = nn.Linear(250, 250)
+        # self.fc5 = nn.Linear(250, 250)
+        self.fc6 = nn.Linear(hidden_size, output_size)
 
         
 
     def forward(self, x):
         out = F.relu(self.fc1(x))
-        out = F.relu(self.fc2(out))
-        out = F.relu(self.fc3(out))
-        out = F.relu(self.fc4(out))
-        out = F.relu(self.fc5(out))
+        # out = F.relu(self.fc2(out))
+        # out = F.relu(self.fc3(out))
+        # out = F.relu(self.fc4(out))
+        # out = F.relu(self.fc5(out))
         out = self.fc6(out)
         
         return out
 
-class MPC_DM:
-    def __init__(self, target_obs, target_action, device):
-
-        self.state_dim = target_obs
-        self.action_dim = target_action
+class MPCPolicyTrainer:
+    def __init__(self, state_dim, action_dim, device):
         self.device = device
-        # initialize policy network parameters
-        self.mpc_policy_net = MPC_Policy_Net(self.state_dim, self.action_dim).to(device)
-        self.mpc_policy_optimizer = optim.Adam(self.mpc_policy_net.parameters(), lr=1e-3, weight_decay=1e-4)
-
-        # initialize dynamic model parameters
-        self.dynamic_model = Dynamic_Model(self.state_dim+self.action_dim, self.state_dim).to(device)
-        self.dynamic_model_optimizer = optim.Adam(self.dynamic_model.parameters(), lr=1e-3, weight_decay=1e-4)
-
-    def sample2tensor(self, state, action, next_state):
-            
-        return (torch.tensor(np.array(state), dtype=torch.float32).to(self.device),
-                torch.tensor(np.array(action), dtype=torch.float32).to(self.device),
-                torch.tensor(np.array(next_state), dtype=torch.float32).to(self.device),)
+        self.policy_net = MPC_Policy_Net(state_dim, action_dim).to(device)
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=1e-3, weight_decay=1e-4)
 
     def update(self, batch_size, buffer):
-        # update MPC policy net
         state, action, reward, next_state, done = buffer.sample(batch_size)
-        # state, action, next_state = self.sample2tensor(state, action, next_state)
-        pred_action = self.mpc_policy_net(state)
-        loss_mpc = F.mse_loss(pred_action, action)
-        self.mpc_policy_optimizer.zero_grad()
-        loss_mpc.backward()
-        self.mpc_policy_optimizer.step()
-
-        # update dynamic model
-        state, action, reward, next_state, done = buffer.sample(batch_size)
-        # state, action, next_state = self.sample2tensor(state, action, next_state)
-
-        pred_next_state = self.dynamic_model(torch.cat([state, action], dim=1))
-        # pred_next_state = self.dynamic_model(state, action)
-        loss_dm = F.mse_loss(pred_next_state, next_state)
-        self.dynamic_model_optimizer.zero_grad()
-        loss_dm.backward()
-        self.dynamic_model_optimizer.step()
-        
-        return loss_mpc, loss_dm
+        pred_action = self.policy_net(state)
+        loss = F.mse_loss(pred_action, action)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return loss
     
     def evaluate_policy(self, env, seed):
         total_reward = 0.0
         state, _ = env.reset(seed=seed)
         for i in range(env.spec.max_episode_steps):
             state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device)
-            action = self.mpc_policy_net(state).cpu().detach().numpy().squeeze(0)
+            action = self.policy_net(state).cpu().detach().numpy().squeeze(0)
             state, reward, terminated, truncated, _ = env.step(action)
             total_reward += reward
         return total_reward
+
+
+class DynamicsModelTrainer:
+    def __init__(self, state_dim, action_dim, device):
+        self.device = device
+        self.model = Dynamic_Model(state_dim + action_dim, state_dim).to(device)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=1e-3, weight_decay=1e-4)
+
+    def update(self, batch_size, buffer):
+        state, action, reward, next_state, done = buffer.sample(batch_size)
+        pred_next_state = self.model(torch.cat([state, action], dim=1))
+        loss = F.mse_loss(pred_next_state, next_state)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return loss
+    
+    def evaluate_dm(self, batch_size, buffer):
+        state, action, reward, next_state, done = buffer.sample(batch_size)
+        
+        with torch.no_grad():
+            pred_next_state = self.model(torch.cat([state, action], dim=1))
+            val_loss = F.mse_loss(pred_next_state, next_state)
+
+        return val_loss
